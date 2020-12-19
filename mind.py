@@ -170,9 +170,9 @@ COND_OP_MAP = {
     ast.GtE: 'greaterThanEq',
 }
 
-BOOL_OP_MAP = {
-    ast.And: 'land',
-    ast.Or: 'or',
+BOOL_OP_MAP = {  # op, shortcut_condition
+    ast.And: ('land', 'false'),
+    ast.Or: ('or', 'true'),
 }
 
 UNARY_OP_MAP = {
@@ -188,6 +188,7 @@ class BaseExpressionHandler:
     expr: Any
     trec: Callable
     alloc_result_name: Callable
+    register_context: RegisterAllocatorContext
     label_allocator: Iterator
     _result_name: str = None
 
@@ -281,6 +282,33 @@ class CompareHandler(BaseExpressionHandler):
             pre.append(f'op {op} {self.result_name} {a_val} {b_val}')
             pre.append(f'jump {end_label} equal {self.result_name} false')
             a_val = b_val
+
+        pre.append(f'label {end_label}')
+        return self.result_name, pre
+
+
+class BoolOpHandler(BaseExpressionHandler):
+    AST_CLASS = ast.BoolOp
+
+    def handle(self):
+        # self.dev_dump()
+        if type(self.expr.op) not in BOOL_OP_MAP:
+            raise ValueError(f'Unsupported BoolOp {self.expr.op}')
+        op, shortcut_condition = BOOL_OP_MAP[type(self.expr.op)]
+
+        end_label = next(self.label_allocator)
+        val, pre = self.trec(self.expr.values[0])
+        pre.append(f'set {self.result_name} {val}')
+
+        bool_value = self.register_context.allocate()
+
+        for value in self.expr.values[1:]:
+            val, b_pre = self.trec(value)
+            pre.extend(b_pre)
+            pre.append(f'op {op} {bool_value} {self.result_name} {val}')
+            pre.append(
+                f'jump {end_label} equal'
+                f' {bool_value} {shortcut_condition}')
 
         pre.append(f'label {end_label}')
         return self.result_name, pre
@@ -402,12 +430,23 @@ test_transform_expr('print(1, 2 + 7, 3, print(), "lol")')
 test_transform_expr('printflush(message1)')
 test_transform_expr('Material.copper')
 test_transform_expr('exit()')
-
-# TODO:
-# test_transform_expr('True and True')
 test_transform_expr('1 >= a > 3')
 
-# exit()
+# TODO:
+test_transform_expr('True and True or False and 3')
+
+# set _a true
+# op land _b _a true
+# label <label:2>
+# set result _a
+# set _c false
+# op land _d _c 3
+# label <label:3>
+# op or result result _c
+# label <label:1>
+# print result
+
+exit()
 
 
 @dataclass
@@ -526,8 +565,6 @@ class IfStatementHandler(BaseStatementHandler):
     AST_CLASS = ast.If
 
     def handle(self):
-        # self.dev_dump()
-
         if self.stmt.orelse:
             else_label = next(self.label_allocator)
         end_label = next(self.label_allocator)
