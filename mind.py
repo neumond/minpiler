@@ -497,20 +497,32 @@ class IfStatementHandler(BaseStatementHandler):
 
     def handle(self):
         # self.dev_dump()
-        assert self.stmt.orelse == []
 
+        if self.stmt.orelse:
+            else_label = next(self.label_allocator)
         end_label = next(self.label_allocator)
+        if not self.stmt.orelse:
+            else_label = end_label
+
         result = []
 
         with self.register_allocator.context() as reg:
             test_val, test_pre = self.eval_expr(
                 self.stmt.test, reg.allocate)
             result.extend(test_pre)
-            result.append(f'jump {end_label} equal {test_val} false')
+            result.append(f'jump {else_label} equal {test_val} false')
 
         for stmt in self.stmt.body:
             result.extend(transform_statement(
                 stmt, self.register_allocator, self.label_allocator))
+
+        if self.stmt.orelse:
+            result.append(f'jump {end_label} always')
+            result.append(f'label {else_label}')
+
+            for stmt in self.stmt.orelse:
+                result.extend(transform_statement(
+                    stmt, self.register_allocator, self.label_allocator))
 
         result.append(f'label {end_label}')
         return result
@@ -530,7 +542,7 @@ def transform_statement(stmt, register_allocator, label_allocator):
         stmt, register_allocator, label_allocator).handle()
 
 
-def test_transform_statement(code, link=True):
+def test_transform_statement(code, link=True, line_nums=True):
     print('----')
     ra = RegisterAllocator()
     la = label_allocator()
@@ -541,7 +553,9 @@ def test_transform_statement(code, link=True):
     if link:
         program = link_program(program)
 
-    for line in program:
+    for index, line in enumerate(program):
+        if line_nums:
+            line = f'{index}. {line}'
         print(line)
 
 
@@ -565,6 +579,10 @@ test_transform_statement("""
 # if a > 3:
 if a + b:
     print('Yes')
+elif a - b:
+    print('Maybe')
+else:
+    print('No')
 """)
 
 exit()
