@@ -1,155 +1,8 @@
 import ast
-import string
 from dataclasses import dataclass
-from itertools import count, islice
 from typing import Any, Callable, Iterator
 
 import mast
-
-
-def label_allocator():
-    for i in count(start=1):
-        yield f'<label:{i}>'
-
-
-def register_allocator():
-    for i in count(start=1):
-        yield f'<reg:{i}>'
-
-
-def name_allocator(letters):
-    ln = len(letters)
-    stack = []
-    while True:
-        pos = 0
-        while True:
-            if pos >= len(stack):
-                stack.append(0)
-                break
-            stack[pos] += 1
-            if stack[pos] >= ln:
-                stack[pos] = 0
-                pos += 1
-            else:
-                break
-        yield ''.join(letters[idx] for idx in reversed(stack))
-
-
-assert list(islice(name_allocator('ab'), 10)) == [
-    'a', 'b', 'aa', 'ab', 'ba',
-    'bb', 'aaa', 'aab', 'aba', 'abb',
-]
-assert list(islice(name_allocator('a'), 5)) == [
-    'a', 'aa', 'aaa', 'aaaa', 'aaaaa',
-]
-assert list(islice(name_allocator('abcd'), 5)) == [
-    'a', 'b', 'c', 'd', 'aa',
-]
-
-
-class RegisterAllocatorContext:
-    def __init__(self, allocator):
-        self._allocator = allocator
-
-    def allocate(self):
-        name = self._allocator.allocate()
-        self._names.add(name)
-        return name
-
-    def free(self, name):
-        self._names.remove(name)
-        self._allocator.free(name)
-
-    def __enter__(self):
-        self._names = set()
-        return self
-
-    def __exit__(self, *args):
-        for name in self._names:
-            self._allocator.free(name)
-        self._names = None
-
-
-class RegisterAllocator:
-    def __init__(self, pre_busy=()):
-        self._busy = set(pre_busy)
-        self._free = set()
-        self._ngen = name_allocator(string.ascii_lowercase)
-
-    def context(self):
-        return RegisterAllocatorContext(self)
-
-    def allocate(self):
-        try:
-            name = self._free.pop()
-        except KeyError:
-            while True:
-                name = '_' + next(self._ngen)
-                if (name not in self._busy) and (name not in self._free):
-                    break
-        self._busy.add(name)
-        return name
-
-    def free(self, name):
-        self._busy.remove(name)
-        self._free.add(name)
-
-
-def remove_unnecessary_jumps(lines):
-    remove_lines = set()
-    for a_index, (a, b) in enumerate(zip(lines, lines[1:])):
-        if not (a.startswith('jump ') and b.startswith('label ')):
-            continue
-        _, jmp_label, _ = a.split(' ', 2)
-        _, target_label = b.split(' ', 1)
-        if jmp_label == target_label:
-            remove_lines.add(a_index)
-    return [line for i, line in enumerate(lines) if i not in remove_lines]
-
-
-def optimize(lines):
-    lines = remove_unnecessary_jumps(lines)
-    return lines
-
-
-def link_program(lines):
-    labels = {}
-    program = []
-    for line in lines:
-        if line.startswith('label '):
-            labels[line.split(' ', 1)[1]] = len(program)
-        else:
-            program.append(line)
-
-    for index, line in enumerate(program):
-        if line.startswith('jump '):
-            _, label, cmd = line.split(' ', 2)
-            program[index] = f'jump {labels[label]} {cmd}'
-
-    if labels and max(labels.values()) >= len(program):
-        program.append('end')
-
-    return program
-
-
-def transform_constant(c):
-    assert isinstance(c, ast.Constant), f'{c}'
-    c = c.value
-    if c is None:
-        return 'null'
-    elif c is False:
-        return 'false'
-    elif c is True:
-        return 'true'
-    elif isinstance(c, (int, float)):
-        return str(c)
-    elif isinstance(c, str):
-        if '"' in c:
-            raise ValueError(
-                f'Quotes are not allowed in literal strings {c!r}')
-        return '"' + c.replace('\n', r'\n') + '"'
-    else:
-        raise ValueError(f'Unsupported constant {c!r}')
 
 
 BIN_OP_MAP = {
@@ -204,10 +57,7 @@ def get_type_map(map, item, desc):
 class BaseExpressionHandler:
     expr: Any
     trec: Callable
-    alloc_result_name: Callable
-    alloc_temp_name: Callable
-    label_allocator: Iterator
-    _result_name: str = None
+    _result: str = None
 
     # AST_CLASS = ast.Xxx
 
@@ -215,10 +65,10 @@ class BaseExpressionHandler:
         print(ast.dump(self.expr))
 
     @property
-    def result_name(self):
-        if self._result_name is None:
-            self._result_name = self.alloc_result_name()
-        return self._result_name
+    def result(self):
+        if self._result is None:
+            self._result = mast.Name()
+        return self._result
 
     def handle(self):
         raise NotImplementedError
@@ -246,11 +96,11 @@ class SubscriptHandler(BaseExpressionHandler):
         assert isinstance(self.expr.slice, ast.Index)
         array_val, array_pre = self.trec(self.expr.value)
         index_val, index_pre = self.trec(self.expr.slice.value)
-        return self.result_name, [
+        return self.result, [
             *array_pre,
             *index_pre,
             mast.FunctionCall(
-                'read', [array_val, index_val], self.result_name),
+                'read', [array_val, index_val], self.result),
         ]
 
 
@@ -260,9 +110,9 @@ class UnaryOpHandler(BaseExpressionHandler):
     def handle(self):
         factory = get_type_map(UNARY_OP_MAP, self.expr.op, 'UnaryOp')
         val, pre = self.trec(self.expr.operand)
-        return self.result_name, [
+        return self.result, [
             *pre,
-            factory(val, self.result_name),
+            factory(val, self.result),
         ]
 
 
@@ -273,11 +123,11 @@ class BinOpHandler(BaseExpressionHandler):
         op = get_type_map(BIN_OP_MAP, self.expr.op, 'BinOp')
         left_val, left_pre = self.trec(self.expr.left)
         right_val, right_pre = self.trec(self.expr.right)
-        return self.result_name, [
+        return self.result, [
             *left_pre,
             *right_pre,
             mast.FunctionCall(
-                f'op {op}', [left_val, right_val], self.result_name),
+                f'op {op}', [left_val, right_val], self.result),
         ]
 
 
@@ -293,13 +143,13 @@ class CompareHandler(BaseExpressionHandler):
             b_val, b_pre = self.trec(comparator)
             pre.extend(b_pre)
             pre.append(mast.FunctionCall(
-                f'op {op}', [a_val, b_val], self.result_name))
+                f'op {op}', [a_val, b_val], self.result))
             pre.append(mast.Jump(
-                end_label, 'equal', [self.result_name, mast.Literal(False)]))
+                end_label, 'equal', [self.result, mast.Literal(False)]))
             a_val = b_val
 
         pre.append(end_label)
-        return self.result_name, pre
+        return self.result, pre
 
 
 class BoolOpHandler(BaseExpressionHandler):
@@ -311,7 +161,7 @@ class BoolOpHandler(BaseExpressionHandler):
 
         end_label = mast.Label()
         val, pre = self.trec(self.expr.values[0])
-        pre.append(mast.FunctionCall('set', [val], self.result_name))
+        pre.append(mast.FunctionCall('set', [val], self.result))
 
         bool_value = mast.Name()
 
@@ -319,14 +169,14 @@ class BoolOpHandler(BaseExpressionHandler):
             val, b_pre = self.trec(value)
             pre.extend(b_pre)
             pre.append(mast.FunctionCall(
-                f'op {op}', [self.result_name, val], bool_value))
+                f'op {op}', [self.result, val], bool_value))
             pre.append(mast.Jump(
                 end_label, 'equal', [bool_value, shortcut_condition]))
             pre.append(mast.FunctionCall(
-                'set', [val], self.result_name))
+                'set', [val], self.result))
 
         pre.append(end_label)
-        return self.result_name, pre
+        return self.result, pre
 
 
 class CallHandler(BaseExpressionHandler):
@@ -334,11 +184,11 @@ class CallHandler(BaseExpressionHandler):
 
     def func_min(self, a, b):
         # TODO: support multiple values
-        return [mast.FunctionCall('op min', [a, b], self.result_name)]
+        return [mast.FunctionCall('op min', [a, b], self.result)]
 
     def func_max(self, a, b):
         # TODO: support multiple values
-        return [mast.FunctionCall('op max', [a, b], self.result_name)]
+        return [mast.FunctionCall('op max', [a, b], self.result)]
 
     def func_print(self, *args):
         return [mast.ProcedureCall('print', [arg]) for arg in args]
@@ -372,10 +222,10 @@ class CallHandler(BaseExpressionHandler):
 
         result_pre.extend(method(*arg_vals))
 
-        if self._result_name is None:
+        if self._result is None:
             return mast.Literal(None), result_pre
         else:
-            return self.result_name, result_pre
+            return self.result, result_pre
 
 
 class AttributeHandler(BaseExpressionHandler):
@@ -403,64 +253,38 @@ AST_NODE_MAP = {
 }
 
 
-def transform_expr(
-    expr, register_allocator, alloc_result_name, label_allocator,
-):
-    with register_allocator.context() as reg:
+def transform_expr(expr):
+    def trec(expr):
+        return transform_expr(expr)
 
-        def trec(expr):
-            return transform_expr(
-                expr, register_allocator, mast.Name, label_allocator)
+    if type(expr) not in AST_NODE_MAP:
+        raise ValueError(f'Unsupported expression {expr}')
 
-        if type(expr) not in AST_NODE_MAP:
-            raise ValueError(f'Unsupported expression {expr}')
-
-        return AST_NODE_MAP[type(expr)](
-            expr, trec,
-            alloc_result_name, mast.Name, label_allocator).handle()
+    return AST_NODE_MAP[type(expr)](expr, trec).handle()
 
 
 def test_transform_expr(code):
     assert len(ast.parse(code).body) == 1
     expr = ast.parse(code).body[0]
     assert isinstance(expr, ast.Expr)
-    val, lines = transform_expr(
-        expr.value,
-        RegisterAllocator(),
-        lambda: mast.Name('result'),
-        label_allocator(),
-    )
-    # lines = optimize(lines)
+    val, lines = transform_expr(expr.value)
     print('-----')
     lines.append(mast.ProcedureCall('print', [val]))
     for line in mast.dump(lines):
         print(line)
-    # print('print', val)
 
 
-# test_transform_expr('2+2')
-# test_transform_expr('2 + 2 * 2 + 8 + 6 * 9 * 3')
-# test_transform_expr('-5')
-# test_transform_expr('cell["kek"]')
-# test_transform_expr('max(min(2, 8), 3 + 3)')
-# test_transform_expr('print(1, 2 + 7, 3, print(), "lol")')
-# test_transform_expr('printflush(message1)')
-# test_transform_expr('Material.copper')
-# test_transform_expr('exit()')
-# test_transform_expr('1 >= a > 3')
+test_transform_expr('2+2')
+test_transform_expr('2 + 2 * 2 + 8 + 6 * 9 * 3')
+test_transform_expr('-5')
+test_transform_expr('cell["kek"]')
+test_transform_expr('max(min(2, 8), 3 + 3)')
+test_transform_expr('print(1, 2 + 7, 3, print(), "lol")')
+test_transform_expr('printflush(message1)')
+test_transform_expr('Material.copper')
+test_transform_expr('exit()')
+test_transform_expr('1 >= a > 3')
 test_transform_expr('True and True or False and 3')
-
-# set _a true
-# op land _b _a true
-# label <label:2>
-# set result _a
-# set _c false
-# op land _d _c 3
-# label <label:3>
-# op or result result _c
-# label <label:1>
-# print result
-
 exit()
 
 
