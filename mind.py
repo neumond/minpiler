@@ -522,146 +522,6 @@ cell1[a + 3] *= b + 9
 exit()
 
 
-class Transform:
-    def __init__(self, python_code):
-        self.python_code = python_code
-        self.label_allocator = label_allocator()
-        self.register_allocator = RegisterAllocator([
-            'null', 'true', 'false',
-            # TODO: make busy all things like cell1, conveyor3
-        ])
-
-    def transform_assign(self, targets, value):
-        assert len(targets) == 1
-
-        if isinstance(targets[0], ast.Subscript):
-            # write to memory cell
-            assert isinstance(targets[0].slice, ast.Index)
-            assert isinstance(value, ast.Name)
-            return [
-                f'write {value.id} '
-                f'{targets[0].value} '
-                f'{transform_constant(targets[0].slice.value)}',
-            ]
-        elif isinstance(targets[0], ast.Name):
-            # write to variable
-            if isinstance(value, ast.Subscript):
-                # memory cell access
-                assert isinstance(value.slice, ast.Index)
-                return [
-                    f'read {targets[0].id} {value.value} '
-                    f'{transform_constant(value.slice.value)}',
-                ]
-            else:
-                return [f'set {targets[0].id} {transform_constant(value)}']
-        else:
-            raise ValueError(f'Unsupported assignment {targets[0]}')
-
-    def transform_aug_assign(self, target, op, value):
-        assert isinstance(target, ast.Name)
-        if isinstance(op, ast.Add):
-            assert isinstance(value, ast.Constant)
-            return [f'op add {target.id} {target.id} {value.value}']
-        elif isinstance(op, ast.Mult):
-            assert isinstance(value, ast.Constant)
-            return [f'op mul {target.id} {target.id} {value.value}']
-        else:
-            raise ValueError(f'Unsupported op {op}')
-
-    def transform_print(self, expr):
-        assert expr.func.id == 'print'
-        assert expr.keywords == []
-        return [
-            f'print {transform_name_or_constant(val)}'
-            for val in expr.args
-        ]
-
-    def transform_printflush(self, expr):
-        assert expr.func.id == 'printflush'
-        assert expr.keywords == []
-        assert len(expr.args) == 1
-        assert expr.args[0].__class__ is ast.Name
-        return [f'{expr.func.id} {expr.args[0].id}']
-
-    def transform_expr(self, expr):
-        cls = expr.__class__
-        assert cls is ast.Call
-        assert expr.func.__class__ is ast.Name
-        if expr.func.id == 'print':
-            return self.transform_print(expr)
-        elif expr.func.id == 'printflush':
-            return self.transform_printflush(expr)
-        else:
-            raise ValueError(f'Unsupported function {expr.func.id}')
-
-    def transform_if_test(self, test, negate=False):
-        assert isinstance(test, ast.Compare)
-
-        assert isinstance(test.left, ast.Name)
-        assert len(test.ops) == 1
-        assert isinstance(
-            test.ops[0], tuple(cls for cls in OPERATOR_MAP.keys()))
-        assert len(test.comparators) == 1
-        assert isinstance(test.comparators[0], ast.Constant)
-
-        op = OPERATOR_MAP[type(test.ops[0])]
-        if negate:
-            op = NEGATE_MAP[op]
-
-        return f'{op} {test.left.id} {test.comparators[0].value}'
-
-    def transform_if(self, test, body, orelse):
-        # jump 8 greaterThan time 200
-        # set x @lead
-        # print x
-        # printflush message1
-        # jump 0 always
-
-        body_statements = [self.transform_stmt(stmt) for stmt in body]
-        if not orelse:
-            label_end = next(self.label_allocator)
-            return [
-                f'jump {label_end} '
-                + self.transform_if_test(test, negate=True),
-                *body_statements,
-                label_end,
-            ]
-        else:
-            print(orelse)
-            assert False
-            # label_main = next(self.label_allocator)
-            # label_end = next(self.label_allocator)
-            # return [
-            #     f'jump {label_main} ' + self.transform_if_test(test),
-            #     *body_statements
-            # ]
-
-    def transform_stmt(self, stmt):
-        if isinstance(stmt, ast.Assign):
-            return self.transform_assign(stmt.targets, stmt.value)
-        if isinstance(stmt, ast.AugAssign):
-            return self.transform_aug_assign(stmt.target, stmt.op, stmt.value)
-        if isinstance(stmt, ast.If):
-            return self.transform_if(stmt.test, stmt.body, stmt.orelse)
-        if isinstance(stmt, ast.Expr):
-            return self.transform_expr(stmt.value)
-        raise ValueError(f'Unsupported statement {stmt}')
-
-    def __call__(self):
-        self.lines = []
-        mod = ast.parse(self.python_code)
-        for stmt in mod.body:
-            self.lines.extend(self.transform_stmt(stmt))
-        return '\n'.join(self.lines)
-
-
-# set x 30
-# op sub x x 10
-# op add x x 0
-# print x
-# printflush message1
-
-
 # read time cell1 0
 # op add time time 1
 # jump 4 lessThan time 300
@@ -672,14 +532,6 @@ class Transform:
 # end
 # control configure unloader1 @lead 0 0 0
 
-
-p1 = """
-x = 30
-x += 6
-x *= 4
-print('lol', x)
-printflush(message1)
-"""
 
 p2 = """
 time = cell1[0]
@@ -692,5 +544,3 @@ if time > 200:
 else:
     unloader1.control.configure(Material.titanium)
 """
-
-print(Transform(p1)())
