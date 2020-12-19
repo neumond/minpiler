@@ -88,6 +88,23 @@ class RegisterAllocator:
         self._free.add(name)
 
 
+def remove_unnecessary_jumps(lines):
+    remove_lines = set()
+    for a_index, (a, b) in enumerate(zip(lines, lines[1:])):
+        if not (a.startswith('jump ') and b.startswith('label ')):
+            continue
+        _, jmp_label, _ = a.split(' ', 2)
+        _, target_label = b.split(' ', 1)
+        if jmp_label == target_label:
+            remove_lines.add(a_index)
+    return [line for i, line in enumerate(lines) if i not in remove_lines]
+
+
+def optimize(lines):
+    lines = remove_unnecessary_jumps(lines)
+    return lines
+
+
 def link_program(lines):
     labels = {}
     program = []
@@ -106,25 +123,6 @@ def link_program(lines):
         program.append('end')
 
     return program
-
-
-OPERATOR_MAP = {
-    ast.Gt: 'greaterThan',
-    ast.GtE: 'greaterThanEq',
-    ast.Lt: 'lessThan',
-    ast.LtE: 'lessThanEq',
-    ast.Eq: 'equal',
-    ast.NotEq: 'notEqual',
-}
-
-NEGATE_MAP = {
-    'greaterThan': 'lessThanEq',
-    'greaterThanEq': 'lessThan',
-    'lessThan': 'greaterThanEq',
-    'lessThanEq': 'greaterThan',
-    'equal': 'notEqual',
-    'notEqual': 'equal',
-}
 
 
 def transform_constant(c):
@@ -190,6 +188,7 @@ class BaseExpressionHandler:
     expr: Any
     trec: Callable
     alloc_result_name: Callable
+    label_allocator: Iterator
     _result_name: str = None
 
     # AST_CLASS = ast.Xxx
@@ -266,6 +265,27 @@ class BinOpHandler(BaseExpressionHandler):
         ]
 
 
+class CompareHandler(BaseExpressionHandler):
+    AST_CLASS = ast.Compare
+
+    def handle(self):
+        end_label = next(self.label_allocator)
+        a_val, pre = self.trec(self.expr.left)
+
+        for op, comparator in zip(self.expr.ops, self.expr.comparators):
+            if type(op) not in COND_OP_MAP:
+                raise ValueError(f'Unsupported Compare {op}')
+            op = COND_OP_MAP[type(op)]
+            b_val, b_pre = self.trec(comparator)
+            pre.extend(b_pre)
+            pre.append(f'op {op} {self.result_name} {a_val} {b_val}')
+            pre.append(f'jump {end_label} equal {self.result_name} false')
+            a_val = b_val
+
+        pre.append(f'label {end_label}')
+        return self.result_name, pre
+
+
 class CallHandler(BaseExpressionHandler):
     AST_CLASS = ast.Call
 
@@ -340,16 +360,20 @@ AST_NODE_MAP = {
 }
 
 
-def transform_expr(expr, register_allocator, alloc_result_name):
+def transform_expr(
+    expr, register_allocator, alloc_result_name, label_allocator,
+):
     with register_allocator.context() as reg:
 
         def trec(expr):
-            return transform_expr(expr, register_allocator, reg.allocate)
+            return transform_expr(
+                expr, register_allocator, reg.allocate, label_allocator)
 
         if type(expr) not in AST_NODE_MAP:
             raise ValueError(f'Unsupported expression {expr}')
 
-        return AST_NODE_MAP[type(expr)](expr, trec, alloc_result_name).handle()
+        return AST_NODE_MAP[type(expr)](
+            expr, trec, alloc_result_name, label_allocator).handle()
 
 
 def test_transform_expr(code):
@@ -360,24 +384,28 @@ def test_transform_expr(code):
         expr.value,
         RegisterAllocator(),
         lambda: 'result',
+        label_allocator(),
     )
+    lines = optimize(lines)
+    print('-----')
     for line in lines:
         print(line)
     print('print', val)
 
 
-# test_transform_expr('2+2')
-# test_transform_expr('2 + 2 * 2 + 8 + 6 * 9 * 3')
-# test_transform_expr('-5')
-# test_transform_expr('cell["kek"]')
-# test_transform_expr('max(min(2, 8), 3 + 3)')
-# test_transform_expr('print(1, 2 + 7, 3, print(), "lol")')
-# test_transform_expr('printflush(message1)')
-# test_transform_expr('Material.copper')
-# test_transform_expr('exit()')
+test_transform_expr('2+2')
+test_transform_expr('2 + 2 * 2 + 8 + 6 * 9 * 3')
+test_transform_expr('-5')
+test_transform_expr('cell["kek"]')
+test_transform_expr('max(min(2, 8), 3 + 3)')
+test_transform_expr('print(1, 2 + 7, 3, print(), "lol")')
+test_transform_expr('printflush(message1)')
+test_transform_expr('Material.copper')
+test_transform_expr('exit()')
 
 # TODO:
 # test_transform_expr('True and True')
+test_transform_expr('1 >= a > 3')
 
 # exit()
 
@@ -394,7 +422,9 @@ class BaseStatementHandler:
         print(ast.dump(self.stmt))
 
     def eval_expr(self, expr, alloc_result_name):
-        return transform_expr(expr, self.register_allocator, alloc_result_name)
+        return transform_expr(
+            expr, self.register_allocator, alloc_result_name,
+            self.label_allocator)
 
     def handle(self):
         raise NotImplementedError
@@ -550,6 +580,8 @@ def test_transform_statement(code, link=True, line_nums=True):
     for stmt in ast.parse(code).body:
         program.extend(transform_statement(stmt, ra, la))
 
+    program = optimize(program)
+
     if link:
         program = link_program(program)
 
@@ -576,8 +608,7 @@ a += 1
 cell1[a + 3] *= b + 9
 """)
 test_transform_statement("""
-# if a > 3:
-if a + b:
+if a > 3:
     print('Yes')
 elif a - b:
     print('Maybe')
@@ -610,3 +641,7 @@ if time > 200:
 else:
     unloader1.control.configure(Material.titanium)
 """
+
+
+# TODO: allocate register context for each statement automatically
+# as in expressions
