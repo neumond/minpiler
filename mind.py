@@ -1,6 +1,6 @@
 import ast
 from dataclasses import dataclass
-from typing import Any, Callable, Iterator
+from typing import Any, Callable
 
 import mast
 
@@ -274,35 +274,28 @@ def test_transform_expr(code):
         print(line)
 
 
-test_transform_expr('2+2')
-test_transform_expr('2 + 2 * 2 + 8 + 6 * 9 * 3')
-test_transform_expr('-5')
-test_transform_expr('cell["kek"]')
-test_transform_expr('max(min(2, 8), 3 + 3)')
-test_transform_expr('print(1, 2 + 7, 3, print(), "lol")')
-test_transform_expr('printflush(message1)')
-test_transform_expr('Material.copper')
-test_transform_expr('exit()')
-test_transform_expr('1 >= a > 3')
-test_transform_expr('True and True or False and 3')
-exit()
+# test_transform_expr('2+2')
+# test_transform_expr('2 + 2 * 2 + 8 + 6 * 9 * 3')
+# test_transform_expr('-5')
+# test_transform_expr('cell["kek"]')
+# test_transform_expr('max(min(2, 8), 3 + 3)')
+# test_transform_expr('print(1, 2 + 7, 3, print(), "lol")')
+# test_transform_expr('printflush(message1)')
+# test_transform_expr('Material.copper')
+# test_transform_expr('exit()')
+# test_transform_expr('1 >= a > 3')
+# test_transform_expr('True and True or False and 3')
+# exit()
 
 
 @dataclass
 class BaseStatementHandler:
     stmt: Any
-    register_allocator: RegisterAllocator
-    label_allocator: Iterator
 
     # AST_CLASS = ast.Xxx
 
     def dev_dump(self):
         print(ast.dump(self.stmt))
-
-    def eval_expr(self, expr, alloc_result_name):
-        return transform_expr(
-            expr, self.register_allocator, alloc_result_name,
-            self.label_allocator)
 
     def handle(self):
         raise NotImplementedError
@@ -312,8 +305,7 @@ class ExprStatementHandler(BaseStatementHandler):
     AST_CLASS = ast.Expr
 
     def handle(self):
-        with self.register_allocator.context() as reg:
-            retval, pre = self.eval_expr(self.stmt.value, reg.allocate)
+        retval, pre = transform_expr(self.stmt.value)
         return pre
 
 
@@ -321,24 +313,21 @@ class AssignStatementHandler(BaseStatementHandler):
     AST_CLASS = ast.Assign
 
     def named_assign(self, target, value):
-        retval, pre = self.eval_expr(value, lambda: target.id)
-        if retval != target.id:
-            pre.append(f'set {target.id} {retval}')
+        retval, pre = transform_expr(value)
+        pre.append(mast.FunctionCall('set', [retval], mast.Name(target.id)))
         return pre
 
     def memory_assign(self, target, value):
         if not isinstance(target.value, ast.Name):
             raise ValueError(f'Unsupported assignment target {target}')
         assert isinstance(target.slice, ast.Index)
-        with self.register_allocator.context() as reg:
-            index_val, index_pre = self.eval_expr(
-                target.slice.value, reg.allocate)
-            value_val, value_pre = self.eval_expr(
-                value, reg.allocate)
+        index_val, index_pre = transform_expr(target.slice.value)
+        value_val, value_pre = transform_expr(value)
         return [
             *index_pre,
             *value_pre,
-            f'write {value_val} {target.value.id} {index_val}',
+            mast.ProcedureCall('write', [
+                value_val, mast.Name(target.value.id), index_val]),
         ]
 
     TARGET_MAP = {
@@ -361,28 +350,26 @@ class AugAssignStatementHandler(BaseStatementHandler):
     AST_CLASS = ast.AugAssign
 
     def named_assign(self, target, op, operand):
-        with self.register_allocator.context() as reg:
-            operand_val, pre = self.eval_expr(operand, reg.allocate)
-            pre.append(f'op {op} {target.id} {target.id} {operand_val}')
-            return pre
+        operand_val, pre = transform_expr(operand)
+        t = mast.Name(target.id)
+        pre.append(mast.FunctionCall(f'op {op}', [t, operand_val], t))
+        return pre
 
     def memory_assign(self, target, op, operand):
         if not isinstance(target.value, ast.Name):
             raise ValueError(f'Unsupported assignment target {target}')
         assert isinstance(target.slice, ast.Index)
-        with self.register_allocator.context() as reg:
-            index_val, index_pre = self.eval_expr(
-                target.slice.value, reg.allocate)
-            operand_val, operand_pre = self.eval_expr(
-                operand, reg.allocate)
-            op_output = reg.allocate()
-            return [
-                *index_pre,
-                *operand_pre,
-                f'read {op_output} {target.value.id} {index_val}',
-                f'op {op} {op_output} {op_output} {operand_val}',
-                f'write {op_output} {target.value.id} {index_val}',
-            ]
+        index_val, index_pre = transform_expr(target.slice.value)
+        operand_val, operand_pre = transform_expr(operand)
+        op_output = mast.Name()
+        cell = mast.Name(target.value.id)
+        return [
+            *index_pre,
+            *operand_pre,
+            mast.FunctionCall('read', [cell, index_val], op_output),
+            mast.FunctionCall(f'op {op}', [op_output, operand_val], op_output),
+            mast.ProcedureCall('write', [op_output, cell, index_val]),
+        ]
 
     TARGET_MAP = {
         ast.Name: named_assign,
@@ -404,33 +391,27 @@ class IfStatementHandler(BaseStatementHandler):
     AST_CLASS = ast.If
 
     def handle(self):
-        if self.stmt.orelse:
-            else_label = next(self.label_allocator)
-        end_label = next(self.label_allocator)
-        if not self.stmt.orelse:
-            else_label = end_label
+        end_label = mast.Label()
+        else_label = mast.Label() if self.stmt.orelse else end_label
 
         result = []
 
-        with self.register_allocator.context() as reg:
-            test_val, test_pre = self.eval_expr(
-                self.stmt.test, reg.allocate)
-            result.extend(test_pre)
-            result.append(f'jump {else_label} equal {test_val} false')
+        test_val, test_pre = transform_expr(self.stmt.test)
+        result.extend(test_pre)
+        result.append(mast.Jump(
+            else_label, 'equal', [test_val, mast.Literal(False)]))
 
         for stmt in self.stmt.body:
-            result.extend(transform_statement(
-                stmt, self.register_allocator, self.label_allocator))
+            result.extend(transform_statement(stmt))
 
         if self.stmt.orelse:
-            result.append(f'jump {end_label} always')
-            result.append(f'label {else_label}')
+            result.append(mast.Jump(end_label, 'always', []))
+            result.append(else_label)
 
             for stmt in self.stmt.orelse:
-                result.extend(transform_statement(
-                    stmt, self.register_allocator, self.label_allocator))
+                result.extend(transform_statement(stmt))
 
-        result.append(f'label {end_label}')
+        result.append(end_label)
         return result
 
 
@@ -440,28 +421,19 @@ AST_STATEMENT_MAP = {
 }
 
 
-def transform_statement(stmt, register_allocator, label_allocator):
+def transform_statement(stmt):
     if type(stmt) not in AST_STATEMENT_MAP:
         raise ValueError(f'Unsupported statement {stmt}')
 
-    return AST_STATEMENT_MAP[type(stmt)](
-        stmt, register_allocator, label_allocator).handle()
+    return AST_STATEMENT_MAP[type(stmt)](stmt).handle()
 
 
-def test_transform_statement(code, link=True, line_nums=True):
+def test_transform_statement(code, line_nums=True):
     print('----')
-    ra = RegisterAllocator()
-    la = label_allocator()
     program = []
     for stmt in ast.parse(code).body:
-        program.extend(transform_statement(stmt, ra, la))
-
-    program = optimize(program)
-
-    if link:
-        program = link_program(program)
-
-    for index, line in enumerate(program):
+        program.extend(transform_statement(stmt))
+    for index, line in enumerate(mast.dump(program)):
         if line_nums:
             line = f'{index}. {line}'
         print(line)
@@ -491,7 +463,6 @@ elif a - b:
 else:
     print('No')
 """)
-
 exit()
 
 
@@ -517,7 +488,3 @@ if time > 200:
 else:
     unloader1.control.configure(Material.titanium)
 """
-
-
-# TODO: allocate register context for each statement automatically
-# as in expressions
