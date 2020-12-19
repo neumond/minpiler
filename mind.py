@@ -2,7 +2,7 @@ import ast
 import string
 from dataclasses import dataclass
 from itertools import count, islice
-from typing import Any, Callable
+from typing import Any, Callable, Iterator
 
 
 def label_allocator():
@@ -88,6 +88,26 @@ class RegisterAllocator:
         self._free.add(name)
 
 
+def link_program(lines):
+    labels = {}
+    program = []
+    for line in lines:
+        if line.startswith('label '):
+            labels[line.split(' ', 1)[1]] = len(program)
+        else:
+            program.append(line)
+
+    for index, line in enumerate(program):
+        if line.startswith('jump '):
+            _, label, cmd = line.split(' ', 2)
+            program[index] = f'jump {labels[label]} {cmd}'
+
+    if labels and max(labels.values()) >= len(program):
+        program.append('end')
+
+    return program
+
+
 OPERATOR_MAP = {
     ast.Gt: 'greaterThan',
     ast.GtE: 'greaterThanEq',
@@ -125,15 +145,6 @@ def transform_constant(c):
         return '"' + c.replace('\n', r'\n') + '"'
     else:
         raise ValueError(f'Unsupported constant {c!r}')
-
-
-def transform_name_or_constant(val):
-    if isinstance(val, ast.Name):
-        return val.id
-    elif isinstance(val, ast.Constant):
-        return transform_constant(val)
-    else:
-        raise ValueError(f'Not a name nor a constant {val}')
 
 
 BIN_OP_MAP = {
@@ -375,6 +386,7 @@ def test_transform_expr(code):
 class BaseStatementHandler:
     stmt: Any
     register_allocator: RegisterAllocator
+    label_allocator: Iterator
 
     # AST_CLASS = ast.Xxx
 
@@ -480,26 +492,57 @@ class AugAssignStatementHandler(BaseStatementHandler):
             self, target, BIN_OP_MAP[type(self.stmt.op)], self.stmt.value)
 
 
+class IfStatementHandler(BaseStatementHandler):
+    AST_CLASS = ast.If
+
+    def handle(self):
+        # self.dev_dump()
+        assert self.stmt.orelse == []
+
+        end_label = next(self.label_allocator)
+        result = []
+
+        with self.register_allocator.context() as reg:
+            test_val, test_pre = self.eval_expr(
+                self.stmt.test, reg.allocate)
+            result.extend(test_pre)
+            result.append(f'jump {end_label} equal {test_val} false')
+
+        for stmt in self.stmt.body:
+            result.extend(transform_statement(
+                stmt, self.register_allocator, self.label_allocator))
+
+        result.append(f'label {end_label}')
+        return result
+
+
 AST_STATEMENT_MAP = {
     subcls.AST_CLASS: subcls
     for subcls in BaseStatementHandler.__subclasses__()
 }
 
 
-def transform_statement(stmt, register_allocator):
+def transform_statement(stmt, register_allocator, label_allocator):
     if type(stmt) not in AST_STATEMENT_MAP:
         raise ValueError(f'Unsupported statement {stmt}')
 
-    return AST_STATEMENT_MAP[type(stmt)](stmt, register_allocator).handle()
+    return AST_STATEMENT_MAP[type(stmt)](
+        stmt, register_allocator, label_allocator).handle()
 
 
-def test_transform_statement(code):
+def test_transform_statement(code, link=True):
     print('----')
     ra = RegisterAllocator()
+    la = label_allocator()
+    program = []
     for stmt in ast.parse(code).body:
-        lines = transform_statement(stmt, ra)
-        for line in lines:
-            print(line)
+        program.extend(transform_statement(stmt, ra, la))
+
+    if link:
+        program = link_program(program)
+
+    for line in program:
+        print(line)
 
 
 test_transform_statement("""
@@ -517,6 +560,11 @@ b = 2.3 + 5.8
 cell1[a] = b
 a += 1
 cell1[a + 3] *= b + 9
+""")
+test_transform_statement("""
+# if a > 3:
+if a + b:
+    print('Yes')
 """)
 
 exit()
