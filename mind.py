@@ -4,10 +4,17 @@ from dataclasses import dataclass
 from itertools import count, islice
 from typing import Any, Callable, Iterator
 
+import mast
+
 
 def label_allocator():
     for i in count(start=1):
         yield f'<label:{i}>'
+
+
+def register_allocator():
+    for i in count(start=1):
+        yield f'<reg:{i}>'
 
 
 def name_allocator(letters):
@@ -171,16 +178,26 @@ COND_OP_MAP = {
 }
 
 BOOL_OP_MAP = {  # op, shortcut_condition
-    ast.And: ('land', 'false'),
-    ast.Or: ('or', 'true'),
+    ast.And: ('land', mast.Literal(False)),
+    ast.Or: ('or', mast.Literal(True)),
 }
 
 UNARY_OP_MAP = {
-    ast.Invert: ('not', '{}'),
-    ast.Not: ('equal', '0 {}'),
-    ast.UAdd: ('add', '0 {}'),
-    ast.USub: ('sub', '0 {}'),
+    ast.Invert: lambda val, result: mast.FunctionCall(
+        'op not', [val], result),
+    ast.Not: lambda val, result: mast.FunctionCall(
+        'op equal', [mast.Literal(0), val], result),
+    ast.UAdd: lambda val, result: mast.FunctionCall(
+        'op add', [mast.Literal(0), val], result),
+    ast.USub: lambda val, result: mast.FunctionCall(
+        'op sub', [mast.Literal(0), val], result),
 }
+
+
+def get_type_map(map, item, desc):
+    if type(item) not in map:
+        raise ValueError(f'Unsupported {desc} {item}')
+    return map[type(item)]
 
 
 @dataclass
@@ -188,7 +205,7 @@ class BaseExpressionHandler:
     expr: Any
     trec: Callable
     alloc_result_name: Callable
-    register_context: RegisterAllocatorContext
+    alloc_temp_name: Callable
     label_allocator: Iterator
     _result_name: str = None
 
@@ -211,14 +228,14 @@ class ConstantHandler(BaseExpressionHandler):
     AST_CLASS = ast.Constant
 
     def handle(self):
-        return transform_constant(self.expr), []
+        return mast.Literal(self.expr.value), []
 
 
 class NameHandler(BaseExpressionHandler):
     AST_CLASS = ast.Name
 
     def handle(self):
-        return self.expr.id, []
+        return mast.Name(self.expr.id), []
 
 
 class SubscriptHandler(BaseExpressionHandler):
@@ -232,7 +249,8 @@ class SubscriptHandler(BaseExpressionHandler):
         return self.result_name, [
             *array_pre,
             *index_pre,
-            f'read {self.result_name} {array_val} {index_val}',
+            mast.FunctionCall(
+                'read', [array_val, index_val], self.result_name),
         ]
 
 
@@ -240,13 +258,11 @@ class UnaryOpHandler(BaseExpressionHandler):
     AST_CLASS = ast.UnaryOp
 
     def handle(self):
-        if type(self.expr.op) not in UNARY_OP_MAP:
-            raise ValueError(f'Unsupported UnaryOp {self.expr.op}')
+        factory = get_type_map(UNARY_OP_MAP, self.expr.op, 'UnaryOp')
         val, pre = self.trec(self.expr.operand)
-        op, template = UNARY_OP_MAP[type(self.expr.op)]
         return self.result_name, [
             *pre,
-            f'op {op} {self.result_name} {template.format(val)}',
+            factory(val, self.result_name),
         ]
 
 
@@ -254,15 +270,14 @@ class BinOpHandler(BaseExpressionHandler):
     AST_CLASS = ast.BinOp
 
     def handle(self):
-        if type(self.expr.op) not in BIN_OP_MAP:
-            raise ValueError(f'Unsupported BinOp {self.expr.op}')
+        op = get_type_map(BIN_OP_MAP, self.expr.op, 'BinOp')
         left_val, left_pre = self.trec(self.expr.left)
         right_val, right_pre = self.trec(self.expr.right)
-        op = BIN_OP_MAP[type(self.expr.op)]
         return self.result_name, [
             *left_pre,
             *right_pre,
-            f'op {op} {self.result_name} {left_val} {right_val}',
+            mast.FunctionCall(
+                f'op {op}', [left_val, right_val], self.result_name),
         ]
 
 
@@ -270,20 +285,20 @@ class CompareHandler(BaseExpressionHandler):
     AST_CLASS = ast.Compare
 
     def handle(self):
-        end_label = next(self.label_allocator)
+        end_label = mast.Label()
         a_val, pre = self.trec(self.expr.left)
 
         for op, comparator in zip(self.expr.ops, self.expr.comparators):
-            if type(op) not in COND_OP_MAP:
-                raise ValueError(f'Unsupported Compare {op}')
-            op = COND_OP_MAP[type(op)]
+            op = get_type_map(COND_OP_MAP, op, 'Compare')
             b_val, b_pre = self.trec(comparator)
             pre.extend(b_pre)
-            pre.append(f'op {op} {self.result_name} {a_val} {b_val}')
-            pre.append(f'jump {end_label} equal {self.result_name} false')
+            pre.append(mast.FunctionCall(
+                f'op {op}', [a_val, b_val], self.result_name))
+            pre.append(mast.Jump(
+                end_label, 'equal', [self.result_name, mast.Literal(False)]))
             a_val = b_val
 
-        pre.append(f'label {end_label}')
+        pre.append(end_label)
         return self.result_name, pre
 
 
@@ -291,26 +306,26 @@ class BoolOpHandler(BaseExpressionHandler):
     AST_CLASS = ast.BoolOp
 
     def handle(self):
-        # self.dev_dump()
-        if type(self.expr.op) not in BOOL_OP_MAP:
-            raise ValueError(f'Unsupported BoolOp {self.expr.op}')
-        op, shortcut_condition = BOOL_OP_MAP[type(self.expr.op)]
+        op, shortcut_condition = get_type_map(
+            BOOL_OP_MAP, self.expr.op, 'BoolOp')
 
-        end_label = next(self.label_allocator)
+        end_label = mast.Label()
         val, pre = self.trec(self.expr.values[0])
-        pre.append(f'set {self.result_name} {val}')
+        pre.append(mast.FunctionCall('set', [val], self.result_name))
 
-        bool_value = self.register_context.allocate()
+        bool_value = mast.Name()
 
         for value in self.expr.values[1:]:
             val, b_pre = self.trec(value)
             pre.extend(b_pre)
-            pre.append(f'op {op} {bool_value} {self.result_name} {val}')
-            pre.append(
-                f'jump {end_label} equal'
-                f' {bool_value} {shortcut_condition}')
+            pre.append(mast.FunctionCall(
+                f'op {op}', [self.result_name, val], bool_value))
+            pre.append(mast.Jump(
+                end_label, 'equal', [bool_value, shortcut_condition]))
+            pre.append(mast.FunctionCall(
+                'set', [val], self.result_name))
 
-        pre.append(f'label {end_label}')
+        pre.append(end_label)
         return self.result_name, pre
 
 
@@ -319,20 +334,20 @@ class CallHandler(BaseExpressionHandler):
 
     def func_min(self, a, b):
         # TODO: support multiple values
-        return [f'op min {self.result_name} {a} {b}']
+        return [mast.FunctionCall('op min', [a, b], self.result_name)]
 
     def func_max(self, a, b):
         # TODO: support multiple values
-        return [f'op max {self.result_name} {a} {b}']
+        return [mast.FunctionCall('op max', [a, b], self.result_name)]
 
     def func_print(self, *args):
-        return [f'print {arg}' for arg in args]
+        return [mast.ProcedureCall('print', [arg]) for arg in args]
 
     def func_printflush(self, target):
-        return [f'printflush {target}']
+        return [mast.ProcedureCall('printflush', [target])]
 
     def func_exit(self):
-        return ['end']
+        return [mast.ProcedureCall('end', [])]
 
     def handle(self):
         if not isinstance(self.expr.func, ast.Name):
@@ -358,7 +373,7 @@ class CallHandler(BaseExpressionHandler):
         result_pre.extend(method(*arg_vals))
 
         if self._result_name is None:
-            return 'null', result_pre
+            return mast.Literal(None), result_pre
         else:
             return self.result_name, result_pre
 
@@ -367,7 +382,7 @@ class AttributeHandler(BaseExpressionHandler):
     AST_CLASS = ast.Attribute
 
     def obj_Material(self, attr):
-        return f'@{attr}', []
+        return mast.Name(f'@{attr}'), []
 
     def handle(self):
         if not isinstance(self.expr.value, ast.Name):
@@ -395,13 +410,14 @@ def transform_expr(
 
         def trec(expr):
             return transform_expr(
-                expr, register_allocator, reg.allocate, label_allocator)
+                expr, register_allocator, mast.Name, label_allocator)
 
         if type(expr) not in AST_NODE_MAP:
             raise ValueError(f'Unsupported expression {expr}')
 
         return AST_NODE_MAP[type(expr)](
-            expr, trec, alloc_result_name, label_allocator).handle()
+            expr, trec,
+            alloc_result_name, mast.Name, label_allocator).handle()
 
 
 def test_transform_expr(code):
@@ -411,28 +427,27 @@ def test_transform_expr(code):
     val, lines = transform_expr(
         expr.value,
         RegisterAllocator(),
-        lambda: 'result',
+        lambda: mast.Name('result'),
         label_allocator(),
     )
-    lines = optimize(lines)
+    # lines = optimize(lines)
     print('-----')
-    for line in lines:
+    lines.append(mast.ProcedureCall('print', [val]))
+    for line in mast.dump(lines):
         print(line)
-    print('print', val)
+    # print('print', val)
 
 
-test_transform_expr('2+2')
-test_transform_expr('2 + 2 * 2 + 8 + 6 * 9 * 3')
-test_transform_expr('-5')
-test_transform_expr('cell["kek"]')
-test_transform_expr('max(min(2, 8), 3 + 3)')
-test_transform_expr('print(1, 2 + 7, 3, print(), "lol")')
-test_transform_expr('printflush(message1)')
-test_transform_expr('Material.copper')
-test_transform_expr('exit()')
-test_transform_expr('1 >= a > 3')
-
-# TODO:
+# test_transform_expr('2+2')
+# test_transform_expr('2 + 2 * 2 + 8 + 6 * 9 * 3')
+# test_transform_expr('-5')
+# test_transform_expr('cell["kek"]')
+# test_transform_expr('max(min(2, 8), 3 + 3)')
+# test_transform_expr('print(1, 2 + 7, 3, print(), "lol")')
+# test_transform_expr('printflush(message1)')
+# test_transform_expr('Material.copper')
+# test_transform_expr('exit()')
+# test_transform_expr('1 >= a > 3')
 test_transform_expr('True and True or False and 3')
 
 # set _a true
