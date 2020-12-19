@@ -175,7 +175,7 @@ UNARY_OP_MAP = {
 
 
 @dataclass
-class AstNodeHandler:  # TODO: rename to AstExprHandler
+class BaseExpressionHandler:
     expr: Any
     trec: Callable
     alloc_result_name: Callable
@@ -196,21 +196,21 @@ class AstNodeHandler:  # TODO: rename to AstExprHandler
         raise NotImplementedError
 
 
-class ConstantHandler(AstNodeHandler):
+class ConstantHandler(BaseExpressionHandler):
     AST_CLASS = ast.Constant
 
     def handle(self):
         return transform_constant(self.expr), []
 
 
-class NameHandler(AstNodeHandler):
+class NameHandler(BaseExpressionHandler):
     AST_CLASS = ast.Name
 
     def handle(self):
         return self.expr.id, []
 
 
-class SubscriptHandler(AstNodeHandler):
+class SubscriptHandler(BaseExpressionHandler):
     AST_CLASS = ast.Subscript
 
     def handle(self):
@@ -225,7 +225,7 @@ class SubscriptHandler(AstNodeHandler):
         ]
 
 
-class UnaryOpHandler(AstNodeHandler):
+class UnaryOpHandler(BaseExpressionHandler):
     AST_CLASS = ast.UnaryOp
 
     def handle(self):
@@ -239,7 +239,7 @@ class UnaryOpHandler(AstNodeHandler):
         ]
 
 
-class BinOpHandler(AstNodeHandler):
+class BinOpHandler(BaseExpressionHandler):
     AST_CLASS = ast.BinOp
 
     def handle(self):
@@ -255,7 +255,7 @@ class BinOpHandler(AstNodeHandler):
         ]
 
 
-class CallHandler(AstNodeHandler):
+class CallHandler(BaseExpressionHandler):
     AST_CLASS = ast.Call
 
     def func_min(self, a, b):
@@ -304,7 +304,7 @@ class CallHandler(AstNodeHandler):
             return self.result_name, result_pre
 
 
-class AttributeHandler(AstNodeHandler):
+class AttributeHandler(BaseExpressionHandler):
     AST_CLASS = ast.Attribute
 
     def obj_Material(self, attr):
@@ -325,7 +325,7 @@ class AttributeHandler(AstNodeHandler):
 
 AST_NODE_MAP = {
     subcls.AST_CLASS: subcls
-    for subcls in AstNodeHandler.__subclasses__()
+    for subcls in BaseExpressionHandler.__subclasses__()
 }
 
 
