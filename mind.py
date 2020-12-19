@@ -120,7 +120,8 @@ def transform_constant(c):
         return str(c)
     elif isinstance(c, str):
         if '"' in c:
-            raise ValueError(f'Quotes are not allowed in literal strings {c!r}')
+            raise ValueError(
+                f'Quotes are not allowed in literal strings {c!r}')
         return '"' + c.replace('\n', r'\n') + '"'
     else:
         raise ValueError(f'Unsupported constant {c!r}')
@@ -373,12 +374,15 @@ def test_transform_expr(code):
 @dataclass
 class BaseStatementHandler:
     stmt: Any
-    eval_expr: Callable
+    register_allocator: RegisterAllocator
 
     # AST_CLASS = ast.Xxx
 
     def dev_dump(self):
         print(ast.dump(self.stmt))
+
+    def eval_expr(self, expr, alloc_result_name):
+        return transform_expr(expr, self.register_allocator, alloc_result_name)
 
     def handle(self):
         raise NotImplementedError
@@ -388,7 +392,8 @@ class ExprStatementHandler(BaseStatementHandler):
     AST_CLASS = ast.Expr
 
     def handle(self):
-        retval, pre = self.eval_expr(self.stmt.value)
+        with self.register_allocator.context() as reg:
+            retval, pre = self.eval_expr(self.stmt.value, reg.allocate)
         return pre
 
 
@@ -396,18 +401,20 @@ class AssignStatementHandler(BaseStatementHandler):
     AST_CLASS = ast.Assign
 
     def named_assign(self, target, value):
-        retval, pre = self.eval_expr(value, target.id)
+        retval, pre = self.eval_expr(value, lambda: target.id)
         if retval != target.id:
             pre.append(f'set {target.id} {retval}')
         return pre
 
     def memory_assign(self, target, value):
-        self.dev_dump()
         if not isinstance(target.value, ast.Name):
             raise ValueError(f'Unsupported assignment target {target}')
         assert isinstance(target.slice, ast.Index)
-        index_val, index_pre = self.eval_expr(target.slice.value)
-        value_val, value_pre = self.eval_expr(value)
+        with self.register_allocator.context() as reg:
+            index_val, index_pre = self.eval_expr(
+                target.slice.value, reg.allocate)
+            value_val, value_pre = self.eval_expr(
+                value, reg.allocate)
         return [
             *index_pre,
             *value_pre,
@@ -430,6 +437,49 @@ class AssignStatementHandler(BaseStatementHandler):
         return method(self, target, self.stmt.value)
 
 
+class AugAssignStatementHandler(BaseStatementHandler):
+    AST_CLASS = ast.AugAssign
+
+    def named_assign(self, target, op, operand):
+        with self.register_allocator.context() as reg:
+            operand_val, pre = self.eval_expr(operand, reg.allocate)
+            pre.append(f'op {op} {target.id} {target.id} {operand_val}')
+            return pre
+
+    def memory_assign(self, target, op, operand):
+        if not isinstance(target.value, ast.Name):
+            raise ValueError(f'Unsupported assignment target {target}')
+        assert isinstance(target.slice, ast.Index)
+        with self.register_allocator.context() as reg:
+            index_val, index_pre = self.eval_expr(
+                target.slice.value, reg.allocate)
+            operand_val, operand_pre = self.eval_expr(
+                operand, reg.allocate)
+            op_output = reg.allocate()
+            return [
+                *index_pre,
+                *operand_pre,
+                f'read {op_output} {target.value.id} {index_val}',
+                f'op {op} {op_output} {op_output} {operand_val}',
+                f'write {op_output} {target.value.id} {index_val}',
+            ]
+
+    TARGET_MAP = {
+        ast.Name: named_assign,
+        ast.Subscript: memory_assign,
+    }
+
+    def handle(self):
+        target = self.stmt.target
+        if type(target) not in self.TARGET_MAP:
+            raise ValueError(f'Unsupported assignment target {target}')
+        method = self.TARGET_MAP[type(target)]
+        if type(self.stmt.op) not in BIN_OP_MAP:
+            raise ValueError(f'Unsupported BinOp {self.stmt.op}')
+        return method(
+            self, target, BIN_OP_MAP[type(self.stmt.op)], self.stmt.value)
+
+
 AST_STATEMENT_MAP = {
     subcls.AST_CLASS: subcls
     for subcls in BaseStatementHandler.__subclasses__()
@@ -440,16 +490,7 @@ def transform_statement(stmt, register_allocator):
     if type(stmt) not in AST_STATEMENT_MAP:
         raise ValueError(f'Unsupported statement {stmt}')
 
-    def eval_expr(expr, result_name=None):
-        if result_name is None:
-            with register_allocator.context() as reg:
-                return transform_expr(expr, register_allocator, reg.allocate)
-        else:
-            register_allocator._busy.add(result_name)
-            return transform_expr(
-                expr, register_allocator, lambda: result_name)
-
-    return AST_STATEMENT_MAP[type(stmt)](stmt, eval_expr).handle()
+    return AST_STATEMENT_MAP[type(stmt)](stmt, register_allocator).handle()
 
 
 def test_transform_statement(code):
@@ -475,6 +516,7 @@ a = 6
 b = 2.3 + 5.8
 cell1[a] = b
 a += 1
+cell1[a + 3] *= b + 9
 """)
 
 exit()
