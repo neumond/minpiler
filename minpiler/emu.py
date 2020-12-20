@@ -1,4 +1,4 @@
-import mast
+from . import mast
 
 
 def _find_all_positions(line, char):

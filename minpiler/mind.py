@@ -2,7 +2,7 @@ import ast
 from dataclasses import dataclass
 from typing import Any, Callable
 
-import mast
+from . import mast
 
 
 BIN_OP_MAP = {
@@ -439,42 +439,31 @@ def test_transform_statement(code, line_nums=True):
         print(line)
 
 
-test_transform_statement("""
-print(2, 6, 7)
-print(2, 6, cell1[3])
-printflush(message1)
-""")
-test_transform_statement("""
-2 + 2
-3 + 3
-""")
-test_transform_statement("""
-a = 6
-b = 2.3 + 5.8
-cell1[a] = b
-a += 1
-cell1[a + 3] *= b + 9
-""")
-test_transform_statement("""
-if a > 3:
-    print('Yes')
-elif a - b:
-    print('Maybe')
-else:
-    print('No')
-""")
-exit()
-
-
-# read time cell1 0
-# op add time time 1
-# jump 4 lessThan time 300
-# set time 0
-# write time cell1 0
-# jump 8 greaterThan time 200
-# control configure unloader1 @titanium 0 0 0
-# end
-# control configure unloader1 @lead 0 0 0
+# test_transform_statement("""
+# print(2, 6, 7)
+# print(2, 6, cell1[3])
+# printflush(message1)
+# """)
+# test_transform_statement("""
+# 2 + 2
+# 3 + 3
+# """)
+# test_transform_statement("""
+# a = 6
+# b = 2.3 + 5.8
+# cell1[a] = b
+# a += 1
+# cell1[a + 3] *= b + 9
+# """)
+# test_transform_statement("""
+# if a > 3:
+#     print('Yes')
+# elif a - b:
+#     print('Maybe')
+# else:
+#     print('No')
+# """)
+# exit()
 
 
 # draw clear 0 0 0 0 0 0
@@ -490,14 +479,14 @@ exit()
 # op equal result a b
 
 
-p2 = """
-time = cell1[0]
-time += 1
-if time >= 300:
-    time = 0
-cell1[0] = time
-if time > 200:
-    unloader1.control.configure(Material.lead)
-else:
-    unloader1.control.configure(Material.titanium)
-"""
+# p2 = """
+# time = cell1[0]
+# time += 1
+# if time >= 300:
+#     time = 0
+# cell1[0] = time
+# if time > 200:
+#     unloader1.control.configure(Material.lead)
+# else:
+#     unloader1.control.configure(Material.titanium)
+# """
