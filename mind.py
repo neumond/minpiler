@@ -477,6 +477,19 @@ exit()
 # control configure unloader1 @lead 0 0 0
 
 
+# draw clear 0 0 0 0 0 0
+# draw color 255 255 255 255 0 0
+# draw image 100 100 @copper 32 0 0
+# draw image 50 50 @lead 32 0 0
+# draw color 0 255 0 100 0 0
+# draw rect 0 0 10 10 0 0
+# drawflush display1
+# radar any any any distance duo1 1 result
+# print result
+# printflush message1
+# op equal result a b
+
+
 p2 = """
 time = cell1[0]
 time += 1
