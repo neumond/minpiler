@@ -81,10 +81,21 @@ class ConstantHandler(BaseExpressionHandler):
         return mast.Literal(self.expr.value), []
 
 
+_reserved_names = {
+    'print',
+    'Draw',
+    'getLink',
+    'Control',
+    'Material',
+}
+
+
 class NameHandler(BaseExpressionHandler):
     AST_CLASS = ast.Name
 
     def handle(self):
+        if self.expr.id in _reserved_names:
+            raise ValueError(f'The name {self.expr.id} is reserved')
         return mast.Name(self.expr.id), []
 
 
@@ -218,6 +229,9 @@ class CallHandler(BaseExpressionHandler):
     def func_exit(self):
         return [mast.ProcedureCall('end', [])]
 
+    def func_getLink(self, index):
+        return [mast.FunctionCall('getlink', [index], self.result)]
+
     def method_print_flush(self, target):
         return [mast.ProcedureCall('printflush', [target])]
 
@@ -256,6 +270,24 @@ class CallHandler(BaseExpressionHandler):
 
     def method_Draw_flush(self, target):
         return [mast.ProcedureCall('drawflush', [target])]
+
+    def method_Control_setEnabled(self, unit, is_enabled):
+        return [mast.ProcedureCall('control enabled', [unit, is_enabled])]
+
+    def method_Control_shootPosition(self, unit, x, y):
+        return [mast.ProcedureCall('control shoot', [
+            unit, x, y, mast.Literal(1)])]
+
+    def method_Control_shootObject(self, unit, target):
+        return [mast.ProcedureCall('control shootp', [
+            unit, target, mast.Literal(1)])]
+
+    def method_Control_stopShooting(self, unit):
+        return [mast.ProcedureCall('control shoot', [
+            unit, mast.Literal(0), mast.Literal(0), mast.Literal(0)])]
+
+    def method_Control_configure(self, unit, value):
+        return [mast.ProcedureCall('control configure', [unit, value])]
 
     def _get_object_method(self, expr):
         if not isinstance(expr.value, ast.Name):
@@ -300,6 +332,9 @@ class CallHandler(BaseExpressionHandler):
             return self.result, result_pre
 
 
+_method_values_permitted = 'Using {} methods as values is permitted'
+
+
 class AttributeHandler(BaseExpressionHandler):
     AST_CLASS = ast.Attribute
 
@@ -307,7 +342,10 @@ class AttributeHandler(BaseExpressionHandler):
         return mast.Name(f'@{attr}'), []
 
     def obj_Draw(self, attr):
-        raise ValueError('Using Draw methods as values is permitted')
+        raise ValueError(_method_values_permitted.format('Draw'))
+
+    def obj_Control(self, attr):
+        raise ValueError(_method_values_permitted.format('Control'))
 
     def handle(self):
         if not isinstance(self.expr.value, ast.Name):
@@ -384,10 +422,16 @@ class ExprStatementHandler(BaseStatementHandler):
         return pre
 
 
+def _check_assignment_to_reserved(name):
+    if name in _reserved_names:
+        raise ValueError(f'The name {name} is reserved')
+
+
 class AssignStatementHandler(BaseStatementHandler):
     AST_CLASS = ast.Assign
 
     def named_assign(self, target, value):
+        _check_assignment_to_reserved(target.id)
         retval, pre = transform_expr(value)
         pre.append(mast.FunctionCall('set', [retval], mast.Name(target.id)))
         return pre
@@ -395,6 +439,7 @@ class AssignStatementHandler(BaseStatementHandler):
     def memory_assign(self, target, value):
         if not isinstance(target.value, ast.Name):
             raise ValueError(f'Unsupported assignment target {target}')
+        _check_assignment_to_reserved(target.value.id)
         assert isinstance(target.slice, ast.Index)
         index_val, index_pre = transform_expr(target.slice.value)
         value_val, value_pre = transform_expr(value)

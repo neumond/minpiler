@@ -61,9 +61,9 @@ if time >= 300:
     time = 0
 cell1[0] = time
 if time > 200:
-    unloader1.configure(Material.lead)
+    Control.configure(unloader1, Material.lead)
 else:
-    unloader1.configure(Material.titanium)
+    Control.configure(unloader1, Material.titanium)
 ```
 
 ```python

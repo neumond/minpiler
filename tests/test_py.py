@@ -103,6 +103,27 @@ print b
 print "string"
 printflush message1
 ==============
+exit()
+--------------
+end
+==============
+print(getLink(4))
+--------------
+getlink _r1 4
+print _r1
+==============
+Control.setEnabled(conveyor1, True)
+Control.shootPosition(duo1, 20, 30)
+Control.shootObject(duo2, enemy1)
+Control.stopShooting(duo3)
+Control.configure(unloader1, Material.copper)
+--------------
+control enabled conveyor1 true
+control shoot duo1 20 30 1
+control shootp duo2 enemy1 1
+control shoot duo3 0 0 0
+control configure unloader1 @copper
+==============
 """
 
 
@@ -110,3 +131,15 @@ printflush message1
     'pycode,mlogcode', test_utils.parse_programs(CODEGEN))
 def test_codegen(pycode, mlogcode):
     assert mlogcode.strip() == cmdline.py_to_mind(pycode).strip()
+
+
+@pytest.mark.parametrize('pycode', [
+    'print = 4',
+    'b = print',
+    'print + 8',
+    'key = getLink',
+    'Draw[8] = True',
+])
+def test_reserved_name(pycode):
+    with pytest.raises(ValueError):
+        cmdline.py_to_mind(pycode)
