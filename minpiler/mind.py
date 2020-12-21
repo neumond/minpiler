@@ -179,16 +179,38 @@ class BoolOpHandler(BaseExpressionHandler):
         return self.result, pre
 
 
+def _create_unary_op(token):
+    def fn(self, a):
+        return [mast.FunctionCall(f'op {token}', [a], self.result)]
+    return fn
+
+
+def _create_bin_op(token):
+    def fn(self, a, b):
+        return [mast.FunctionCall(f'op {token}', [a, b], self.result)]
+    return fn
+
+
 class CallHandler(BaseExpressionHandler):
     AST_CLASS = ast.Call
 
-    def func_min(self, a, b):
-        # TODO: support multiple values
-        return [mast.FunctionCall('op min', [a, b], self.result)]
-
-    def func_max(self, a, b):
-        # TODO: support multiple values
-        return [mast.FunctionCall('op max', [a, b], self.result)]
+    # TODO: support multiple values
+    func_min = _create_bin_op('min')
+    # TODO: support multiple values
+    func_max = _create_bin_op('max')
+    func_atan2 = _create_bin_op('atan2')
+    func_dst = _create_bin_op('dst')
+    func_noise = _create_bin_op('noise')
+    func_abs = _create_unary_op('abs')
+    func_log = _create_unary_op('log')
+    func_log10 = _create_unary_op('log10')
+    func_sin = _create_unary_op('sin')
+    func_cos = _create_unary_op('cos')
+    func_tan = _create_unary_op('tan')
+    func_floor = _create_unary_op('floor')
+    func_ceil = _create_unary_op('ceil')
+    func_sqrt = _create_unary_op('sqrt')
+    func_rand = _create_unary_op('rand')
 
     def func_print(self, *args):
         return [mast.ProcedureCall('print', [arg]) for arg in args]

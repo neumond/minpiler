@@ -1,4 +1,5 @@
 import math
+import random
 
 from . import mast
 
@@ -70,6 +71,15 @@ def _read_func(cell, index):
     return cell.value.get(index.int_value, 0.0)
 
 
+def _dst_func(a, b):
+    a, b = a.num_value, b.num_value
+    return math.sqrt(a * a + b * b)
+
+
+_DTR = math.pi / 180
+_RTD = 180 / math.pi
+
+
 INST_MAP = {
     'op add': lambda a, b: a.num_value + b.num_value,
     'op sub': lambda a, b: a.num_value - b.num_value,
@@ -93,6 +103,19 @@ INST_MAP = {
     'op greaterThanEq': lambda a, b: float(a.num_value >= b.num_value),
     'op min': lambda a, b: min(a.num_value, b.num_value),
     'op max': lambda a, b: max(a.num_value, b.num_value),
+    'op atan2': lambda a, b: _RTD * math.atan2(a.num_value, b.num_value),
+    'op dst': _dst_func,
+    # TODO: op noise
+    'op abs': lambda a: abs(a.num_value),
+    'op log': lambda a: math.log(a.num_value),
+    'op log10': lambda a: math.log10(a.num_value),
+    'op sin': lambda a: math.sin(_DTR * a.num_value),
+    'op cos': lambda a: math.cos(_DTR * a.num_value),
+    'op tan': lambda a: math.tan(_DTR * a.num_value),
+    'op floor': lambda a: float(math.floor(a.num_value)),
+    'op ceil': lambda a: float(math.ceil(a.num_value)),
+    'op sqrt': lambda a: math.sqrt(a.num_value),
+    'op rand': lambda a: random.random() * a.num_value,
     'set': lambda a: a.value,
     'read': _read_func,
 }
