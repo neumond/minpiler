@@ -12,15 +12,15 @@ parser.add_argument(
     '--output', type=argparse.FileType('w'), default=sys.stdout)
 
 
-def main(in_file, out_file):
-    code = in_file.read()
-
+def py_to_mind(code):
     program = []
     for stmt in ast.parse(code).body:
         program.extend(mind.transform_statement(stmt))
-    for line in mast.dump(program):
-        out_file.write(line)
-        out_file.write('\n')
+    return '\n'.join(mast.dump(program)) + '\n'
+
+
+def main(in_file, out_file):
+    out_file.write(py_to_mind(in_file.read()))
 
 
 def run():

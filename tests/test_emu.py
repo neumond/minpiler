@@ -2,7 +2,7 @@ from copy import deepcopy
 
 import pytest
 
-from minpiler import emu, mparse
+from minpiler import emu, mparse, test_utils
 
 
 @pytest.mark.parametrize('code,state,result', [
@@ -61,40 +61,7 @@ print 2
 """
 
 
-def parse_programs():
-    progs = []
-
-    code = []
-    output = []
-    reading_code = True
-
-    def flush():
-        nonlocal reading_code
-        if code or output:
-            progs.append((
-                '\n'.join(code),
-                '\n'.join(output),
-            ))
-        code.clear()
-        output.clear()
-        reading_code = True
-
-    for line in PROGRAMS.strip().splitlines():
-        if line.startswith('==='):
-            flush()
-        elif line.startswith('---'):
-            reading_code = False
-        else:
-            if reading_code:
-                code.append(line)
-            else:
-                output.append(line)
-    flush()
-
-    return progs
-
-
-@pytest.mark.parametrize('code,result', parse_programs())
+@pytest.mark.parametrize('code,result', test_utils.parse_programs(PROGRAMS))
 def test_programs(code, result):
     ast = mparse.parse(code)
     assert emu.execute(ast, {
