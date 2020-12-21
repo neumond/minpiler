@@ -65,3 +65,48 @@ def test_programs(code, result):
     assert emu.execute(ast, {
         'cell1': {},
     }) == result
+
+
+CODEGEN = """
+==============
+Draw.clear(1, 2, 3)
+Draw.color(1, 2, 3, 200)
+Draw.stroke(3)
+Draw.line(20, 20, 50, 50)
+Draw.rect(20, 20, 10, 10)
+Draw.lineRect(20, 20, 10, 10)
+Draw.poly(50, 50, 6, 30, 10)
+Draw.linePoly(50, 50, 6, 30, 10)
+Draw.triangle(20, 20, 60, 60, 30, 10)
+Draw.image(50, 50, Material.copper, 32, 0)
+Draw.flush(display1)
+--------------
+draw clear 1 2 3
+draw color 1 2 3 200
+draw stroke 3
+draw line 20 20 50 50
+draw rect 20 20 10 10
+draw lineRect 20 20 10 10
+draw poly 50 50 6 30 10
+draw linePoly 50 50 6 30 10
+draw triangle 20 20 60 60 30 10
+draw image 50 50 @copper 32 0
+drawflush display1
+==============
+print(1)
+print(b)
+print('string')
+print.flush(message1)
+--------------
+print 1
+print b
+print "string"
+printflush message1
+==============
+"""
+
+
+@pytest.mark.parametrize(
+    'pycode,mlogcode', test_utils.parse_programs(CODEGEN))
+def test_codegen(pycode, mlogcode):
+    assert mlogcode.strip() == cmdline.py_to_mind(pycode).strip()

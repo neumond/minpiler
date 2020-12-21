@@ -215,22 +215,72 @@ class CallHandler(BaseExpressionHandler):
     def func_print(self, *args):
         return [mast.ProcedureCall('print', [arg]) for arg in args]
 
-    def func_printflush(self, target):
-        return [mast.ProcedureCall('printflush', [target])]
-
     def func_exit(self):
         return [mast.ProcedureCall('end', [])]
 
+    def method_print_flush(self, target):
+        return [mast.ProcedureCall('printflush', [target])]
+
+    def method_Draw_clear(self, r, g, b):
+        return [mast.ProcedureCall('draw clear', [r, g, b])]
+
+    def method_Draw_color(self, r, g, b, a):
+        return [mast.ProcedureCall('draw color', [r, g, b, a])]
+
+    def method_Draw_stroke(self, width):
+        return [mast.ProcedureCall('draw stroke', [width])]
+
+    def method_Draw_line(self, x, y, x2, y2):
+        return [mast.ProcedureCall('draw line', [x, y, x2, y2])]
+
+    def method_Draw_rect(self, x, y, width, height):
+        return [mast.ProcedureCall('draw rect', [x, y, width, height])]
+
+    def method_Draw_lineRect(self, x, y, width, height):
+        return [mast.ProcedureCall('draw lineRect', [x, y, width, height])]
+
+    def method_Draw_poly(self, x, y, sides, radius, rotation):
+        return [mast.ProcedureCall('draw poly', [
+            x, y, sides, radius, rotation])]
+
+    def method_Draw_linePoly(self, x, y, sides, radius, rotation):
+        return [mast.ProcedureCall('draw linePoly', [
+            x, y, sides, radius, rotation])]
+
+    def method_Draw_triangle(self, x, y, x2, y2, x3, y3):
+        return [mast.ProcedureCall('draw triangle', [x, y, x2, y2, x3, y3])]
+
+    def method_Draw_image(self, x, y, image, size, rotation):
+        return [mast.ProcedureCall('draw image', [
+            x, y, image, size, rotation])]
+
+    def method_Draw_flush(self, target):
+        return [mast.ProcedureCall('drawflush', [target])]
+
+    def _get_object_method(self, expr):
+        if not isinstance(expr.value, ast.Name):
+            raise ValueError(
+                'Expressions are not allowed before attribute access, '
+                'use names of objects directly: Draw.clear(0, 0, 0)'
+            )
+        return f'{expr.value.id}_{expr.attr}'
+
     def handle(self):
-        if not isinstance(self.expr.func, ast.Name):
+        if isinstance(self.expr.func, ast.Attribute):
+            fname = self._get_object_method(self.expr.func)
+            method = getattr(self, 'method_' + fname, None)
+            if method is None:
+                raise ValueError(f'Unknown method name {fname}')
+        elif isinstance(self.expr.func, ast.Name):
+            fname = self.expr.func.id
+            method = getattr(self, 'func_' + fname, None)
+            if method is None:
+                raise ValueError(f'Unknown function name {fname}')
+        else:
             raise ValueError(
                 'Expressions resulting in functions are not allowed, '
                 'only direct calls of named functions: func(1, 2, 3)'
             )
-        fname = self.expr.func.id
-        method = getattr(self, 'func_' + fname, None)
-        if method is None:
-            raise ValueError(f'Unknown function name {fname}')
 
         if self.expr.keywords:
             raise ValueError('Keyword arguments are not supported')
@@ -255,6 +305,9 @@ class AttributeHandler(BaseExpressionHandler):
 
     def obj_Material(self, attr):
         return mast.Name(f'@{attr}'), []
+
+    def obj_Draw(self, attr):
+        raise ValueError('Using Draw methods as values is permitted')
 
     def handle(self):
         if not isinstance(self.expr.value, ast.Name):
