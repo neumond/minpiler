@@ -45,6 +45,36 @@ UNARY_OP_MAP = {
     ast.USub: lambda val, result: mast.FunctionCall(
         'op sub', [mast.Literal(0), val], result),
 }
+RESERVED_NAMES = {
+    'print',
+    'exit',
+    'min',
+    'max',
+    'atan2',
+    'dst',
+    'noise',
+    'abs',
+    'log',
+    'log10',
+    'sin',
+    'cos',
+    'tan',
+    'floor',
+    'ceil',
+    'sqrt',
+    'rand',
+    'print',
+    'getLink',
+    'Draw',
+    'Control',
+    'Material',
+    'Liquid',
+    'Property',
+    'Sort',
+    'Target',
+    'Radar',
+    'Sensor',
+}
 
 
 def get_type_map(map, item, desc):
@@ -81,20 +111,11 @@ class ConstantHandler(BaseExpressionHandler):
         return mast.Literal(self.expr.value), []
 
 
-_reserved_names = {
-    'print',
-    'Draw',
-    'getLink',
-    'Control',
-    'Material',
-}
-
-
 class NameHandler(BaseExpressionHandler):
     AST_CLASS = ast.Name
 
     def handle(self):
-        if self.expr.id in _reserved_names:
+        if self.expr.id in RESERVED_NAMES:
             raise ValueError(f'The name {self.expr.id} is reserved')
         return mast.Name(self.expr.id), []
 
@@ -229,8 +250,17 @@ class CallHandler(BaseExpressionHandler):
     def func_exit(self):
         return [mast.ProcedureCall('end', [])]
 
-    def func_getLink(self, index):
+    def func_GetLink(self, index):
         return [mast.FunctionCall('getlink', [index], self.result)]
+
+    def func_Radar(self, unit, target1, target2, target3, sort_type, sort_dir):
+        # this is actually a function, but with unusual positions of arguments
+        return [mast.ProcedureCall('radar', [
+            target1, target2, target3, sort_type, unit, sort_dir, self.result
+        ])]
+
+    def func_Sensor(self, unit, prop):
+        return [mast.FunctionCall('sensor', [unit, prop], self.result)]
 
     def method_print_flush(self, target):
         return [mast.ProcedureCall('printflush', [target])]
@@ -339,13 +369,33 @@ class AttributeHandler(BaseExpressionHandler):
     AST_CLASS = ast.Attribute
 
     def obj_Material(self, attr):
-        return mast.Name(f'@{attr}'), []
+        return mast.Name(f'@{attr.replace("_", "-")}'), []
+
+    def obj_Liquid(self, attr):
+        return mast.Name(f'@{attr.replace("_", "-")}'), []
+
+    def obj_Property(self, attr):
+        return mast.Name(f'@{attr.replace("_", "-")}'), []
+
+    def obj_Target(self, attr):
+        return mast.Name(attr), []
+
+    def obj_Sort(self, attr):
+        if attr == 'asc':
+            return mast.Literal(1), []
+        elif attr == 'desc':
+            return mast.Literal(-1), []
+        else:
+            return mast.Name(attr), []
 
     def obj_Draw(self, attr):
         raise ValueError(_method_values_permitted.format('Draw'))
 
     def obj_Control(self, attr):
         raise ValueError(_method_values_permitted.format('Control'))
+
+    def obj_Radar(self, attr):
+        raise ValueError(_method_values_permitted.format('Radar'))
 
     def handle(self):
         if not isinstance(self.expr.value, ast.Name):
@@ -423,7 +473,7 @@ class ExprStatementHandler(BaseStatementHandler):
 
 
 def _check_assignment_to_reserved(name):
-    if name in _reserved_names:
+    if name in RESERVED_NAMES:
         raise ValueError(f'The name {name} is reserved')
 
 
@@ -584,29 +634,3 @@ def test_transform_statement(code, line_nums=True):
 #     print('No')
 # """)
 # exit()
-
-
-# draw clear 0 0 0 0 0 0
-# draw color 255 255 255 255 0 0
-# draw image 100 100 @copper 32 0 0
-# draw image 50 50 @lead 32 0 0
-# draw color 0 255 0 100 0 0
-# draw rect 0 0 10 10 0 0
-# drawflush display1
-# radar any any any distance duo1 1 result
-# print result
-# printflush message1
-# op equal result a b
-
-
-# p2 = """
-# time = cell1[0]
-# time += 1
-# if time >= 300:
-#     time = 0
-# cell1[0] = time
-# if time > 200:
-#     unloader1.control.configure(Material.lead)
-# else:
-#     unloader1.control.configure(Material.titanium)
-# """

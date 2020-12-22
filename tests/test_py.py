@@ -107,7 +107,7 @@ exit()
 --------------
 end
 ==============
-print(getLink(4))
+print(GetLink(4))
 --------------
 getlink _r1 4
 print _r1
@@ -123,6 +123,18 @@ control shoot duo1 20 30 1
 control shootp duo2 enemy1 1
 control shoot duo3 0 0 0
 control configure unloader1 @copper
+==============
+print(Radar(
+    duo1, Target.enemy, Target.flying, Target.any,
+    Sort.distance, Sort.asc))
+--------------
+radar enemy flying any distance duo1 1 _r1
+print _r1
+==============
+print(Sensor(duo1, Property.health))
+--------------
+sensor _r1 duo1 @health
+print _r1
 ==============
 """
 
