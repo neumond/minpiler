@@ -721,6 +721,32 @@ class IfStatementHandler(BaseStatementHandler):
         return result
 
 
+class WhileStatementHandler(BaseStatementHandler):
+    AST_CLASS = ast.While
+
+    def handle(self):
+        loop_label = mast.Label()
+        end_label = mast.Label()
+
+        result = []
+        result.append(loop_label)
+
+        test_val, test_pre = transform_expr(self.stmt.test)
+        test_val = test_val[0]
+        result.extend(test_pre)
+        result.append(mast.Jump(
+            end_label, 'equal', [test_val, mast.Literal(False)]))
+
+        for stmt in self.stmt.body:
+            result.extend(transform_statement(stmt))
+
+        result.append(mast.Jump(loop_label, 'always', []))
+
+        result.append(end_label)
+        return result
+
+
+
 AST_STATEMENT_MAP = {
     subcls.AST_CLASS: subcls
     for subcls in BaseStatementHandler.__subclasses__()
