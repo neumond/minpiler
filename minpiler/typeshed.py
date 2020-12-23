@@ -286,3 +286,65 @@ class Target:
     flying: MConst
     boss: MConst
     ground: MConst
+
+
+# https://github.com/Anuken/Mindustry/blob/master/core/src/mindustry/content/UnitTypes.java
+class UnitType:
+    dagger: MConst
+    mace: MConst
+    fortress: MConst
+    scepter: MConst
+    reign: MConst
+    nova: MConst
+    pulsar: MConst
+    quasar: MConst
+    vela: MConst
+    corvus: MConst
+    crawler: MConst
+    atrax: MConst
+    spiroct: MConst
+    arkyid: MConst
+    toxopid: MConst
+    flare: MConst
+    horizon: MConst
+    zenith: MConst
+    antumbra: MConst
+    eclipse: MConst
+    mono: MConst
+    poly: MConst
+    mega: MConst
+    quad: MConst
+    oct: MConst
+    risso: MConst
+    minke: MConst
+    bryde: MConst
+    sei: MConst
+    omura: MConst
+    alpha: MConst
+    beta: MConst
+    gamma: MConst
+    block: MConst
+
+
+# https://github.com/Anuken/Mindustry/blob/master/core/src/mindustry/world/meta/BlockFlag.java
+class BlockFlag:
+    core: MConst
+    storage: MConst
+    generator: MConst
+    turret: MConst
+    factory: MConst
+    repair: MConst
+    rally: MConst
+    battery: MConst
+    resupply: MConst
+    reactor: MConst
+    unitModifier: MConst
+    extinguisher: MConst
+
+
+# https://github.com/Anuken/Mindustry/blob/master/core/src/mindustry/content/Blocks.java
+class Block:
+    # TODO: put here full list of blocks
+
+    air: MConst
+    solid: MConst

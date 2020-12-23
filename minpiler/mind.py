@@ -1,5 +1,5 @@
 import ast
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Callable
 
 from . import mast
@@ -64,16 +64,21 @@ RESERVED_NAMES = {
     'sqrt',
     'rand',
     'print',
-    'getLink',
+
+    'GetLink',
     'Draw',
     'Control',
+    'Radar',
+    'Sensor',
+
     'Material',
     'Liquid',
     'Property',
     'Sort',
     'Target',
-    'Radar',
-    'Sensor',
+    'UnitType',
+    'BuildingType',
+    'Building',
 }
 
 
@@ -86,19 +91,34 @@ def get_type_map(map, item, desc):
 @dataclass
 class BaseExpressionHandler:
     expr: Any
-    trec: Callable
-    _result: str = None
+    trec: Callable = field(repr=False)
+    pre: list = field(default_factory=list)
+    resmap: dict = field(default_factory=dict)
 
     # AST_CLASS = ast.Xxx
 
     def dev_dump(self):
         print(ast.dump(self.expr))
 
-    @property
-    def result(self):
-        if self._result is None:
-            self._result = mast.Name()
-        return self._result
+    def get_results(self):
+        return [self.resmap[i] for i in range(len(self.resmap))]
+
+    def run_trec(self, expr):
+        retvals, pre = self.trec(expr)
+        self.pre.extend(pre)
+        return retvals
+
+    def run_trec_single(self, expr):
+        retvals = self.run_trec(expr)
+        if len(retvals) != 1:
+            raise ValueError('Single value expression result expected')
+        return retvals[0]
+
+    def proc(self, name, *args):
+        self.pre.append(mast.ProcedureCall(name, args))
+
+    def jump(self, label, op, *args):
+        self.pre.append(mast.Jump(label, op, args))
 
     def handle(self):
         raise NotImplementedError
@@ -108,7 +128,7 @@ class ConstantHandler(BaseExpressionHandler):
     AST_CLASS = ast.Constant
 
     def handle(self):
-        return mast.Literal(self.expr.value), []
+        self.resmap[0] = mast.Literal(self.expr.value)
 
 
 class NameHandler(BaseExpressionHandler):
@@ -117,7 +137,7 @@ class NameHandler(BaseExpressionHandler):
     def handle(self):
         if self.expr.id in RESERVED_NAMES:
             raise ValueError(f'The name {self.expr.id} is reserved')
-        return mast.Name(self.expr.id), []
+        self.resmap[0] = mast.Name(self.expr.id)
 
 
 class SubscriptHandler(BaseExpressionHandler):
@@ -126,14 +146,10 @@ class SubscriptHandler(BaseExpressionHandler):
     def handle(self):
         # memory cell access
         assert isinstance(self.expr.slice, ast.Index)
-        array_val, array_pre = self.trec(self.expr.value)
-        index_val, index_pre = self.trec(self.expr.slice.value)
-        return self.result, [
-            *array_pre,
-            *index_pre,
-            mast.FunctionCall(
-                'read', [array_val, index_val], self.result),
-        ]
+        array_val = self.run_trec_single(self.expr.value)
+        index_val = self.run_trec_single(self.expr.slice.value)
+        self.resmap[0] = mast.Name()
+        self.proc('read', self.resmap[0], array_val, index_val)
 
 
 class UnaryOpHandler(BaseExpressionHandler):
@@ -141,11 +157,9 @@ class UnaryOpHandler(BaseExpressionHandler):
 
     def handle(self):
         factory = get_type_map(UNARY_OP_MAP, self.expr.op, 'UnaryOp')
-        val, pre = self.trec(self.expr.operand)
-        return self.result, [
-            *pre,
-            factory(val, self.result),
-        ]
+        val = self.run_trec_single(self.expr.operand)
+        self.resmap[0] = mast.Name()
+        self.pre.append(factory(val, self.resmap[0]))
 
 
 class BinOpHandler(BaseExpressionHandler):
@@ -153,14 +167,10 @@ class BinOpHandler(BaseExpressionHandler):
 
     def handle(self):
         op = get_type_map(BIN_OP_MAP, self.expr.op, 'BinOp')
-        left_val, left_pre = self.trec(self.expr.left)
-        right_val, right_pre = self.trec(self.expr.right)
-        return self.result, [
-            *left_pre,
-            *right_pre,
-            mast.FunctionCall(
-                f'op {op}', [left_val, right_val], self.result),
-        ]
+        left_val = self.run_trec_single(self.expr.left)
+        right_val = self.run_trec_single(self.expr.right)
+        self.resmap[0] = mast.Name()
+        self.proc(f'op {op}', self.resmap[0], left_val, right_val)
 
 
 class CompareHandler(BaseExpressionHandler):
@@ -168,20 +178,17 @@ class CompareHandler(BaseExpressionHandler):
 
     def handle(self):
         end_label = mast.Label()
-        a_val, pre = self.trec(self.expr.left)
+        self.resmap[0] = mast.Name()
+        a_val = self.run_trec_single(self.expr.left)
 
         for op, comparator in zip(self.expr.ops, self.expr.comparators):
             op = get_type_map(COND_OP_MAP, op, 'Compare')
-            b_val, b_pre = self.trec(comparator)
-            pre.extend(b_pre)
-            pre.append(mast.FunctionCall(
-                f'op {op}', [a_val, b_val], self.result))
-            pre.append(mast.Jump(
-                end_label, 'equal', [self.result, mast.Literal(False)]))
+            b_val = self.run_trec_single(comparator)
+            self.proc(f'op {op}', self.resmap[0], a_val, b_val)
+            self.jump(end_label, 'equal', self.resmap[0], mast.Literal(False))
             a_val = b_val
 
-        pre.append(end_label)
-        return self.result, pre
+        self.pre.append(end_label)
 
 
 class BoolOpHandler(BaseExpressionHandler):
@@ -192,35 +199,52 @@ class BoolOpHandler(BaseExpressionHandler):
             BOOL_OP_MAP, self.expr.op, 'BoolOp')
 
         end_label = mast.Label()
-        val, pre = self.trec(self.expr.values[0])
-        pre.append(mast.FunctionCall('set', [val], self.result))
+        self.resmap[0] = mast.Name()
+        val = self.run_trec_single(self.expr.values[0])
+        self.proc('set', self.resmap[0], val)
 
         bool_value = mast.Name()
 
         for value in self.expr.values[1:]:
-            val, b_pre = self.trec(value)
-            pre.extend(b_pre)
-            pre.append(mast.FunctionCall(
-                f'op {op}', [self.result, val], bool_value))
-            pre.append(mast.Jump(
-                end_label, 'equal', [bool_value, shortcut_condition]))
-            pre.append(mast.FunctionCall(
-                'set', [val], self.result))
+            val = self.run_trec_single(value)
+            self.proc(f'op {op}', bool_value, self.resmap[0], val)
+            self.jump(end_label, 'equal', bool_value, shortcut_condition)
+            self.proc('set', self.resmap[0], val)
 
-        pre.append(end_label)
-        return self.result, pre
+        self.pre.append(end_label)
 
 
 def _create_unary_op(token):
     def fn(self, a):
-        return [mast.FunctionCall(f'op {token}', [a], self.result)]
+        self.resmap[0] = mast.Name()
+        self.proc(f'op {token}', self.resmap[0], a)
     return fn
 
 
 def _create_bin_op(token):
     def fn(self, a, b):
-        return [mast.FunctionCall(f'op {token}', [a, b], self.result)]
+        self.resmap[0] = mast.Name()
+        self.proc(f'op {token}', self.resmap[0], a, b)
     return fn
+
+
+def _rfill(items, tlen, filler=0):
+    while len(items) < tlen:
+        items.append(mast.Literal(filler))
+    return items
+
+
+def _fill(items, tlen, filler=0):
+    result = []
+    for i in range(tlen):
+        if i in items:
+            result.append(items[i])
+        else:
+            result.append(mast.Literal(filler))
+    return result
+
+
+_ZERO = mast.Literal(0)
 
 
 class CallHandler(BaseExpressionHandler):
@@ -245,79 +269,172 @@ class CallHandler(BaseExpressionHandler):
     func_rand = _create_unary_op('rand')
 
     def func_print(self, *args):
-        return [mast.ProcedureCall('print', [arg]) for arg in args]
+        for arg in args:
+            self.proc('print', arg)
 
     def func_exit(self):
-        return [mast.ProcedureCall('end', [])]
+        self.proc('end')
 
     def func_GetLink(self, index):
-        return [mast.FunctionCall('getlink', [index], self.result)]
+        self.resmap[0] = mast.Name()
+        self.proc('getlink', self.resmap[0], index)
 
     def func_Radar(self, unit, target1, target2, target3, sort_type, sort_dir):
-        # this is actually a function, but with unusual positions of arguments
-        return [mast.ProcedureCall('radar', [
-            target1, target2, target3, sort_type, unit, sort_dir, self.result
-        ])]
+        self.resmap[0] = mast.Name()
+        self.proc(
+            'radar', target1, target2, target3,
+            sort_type, unit, sort_dir, self.resmap[0])
 
     def func_Sensor(self, unit, prop):
-        return [mast.FunctionCall('sensor', [unit, prop], self.result)]
+        self.resmap[0] = mast.Name()
+        self.proc('sensor', self.resmap[0], unit, prop)
+
+    def func_UnitBind(self, utype):
+        self.proc('ubind', utype)
+
+    def func_UnitRadar(self, target1, target2, target3, sort_type, sort_dir):
+        self.resmap[0] = mast.Name()
+        self.proc(
+            'uradar', target1, target2, target3,
+            sort_type, mast.Name('turret1'), sort_dir, self.resmap[0])
+
+    def func_LocateBuilding(self, block_type, enemy):
+        found = self.resmap[0] = mast.Name()
+        x = self.resmap[1] = mast.Name()
+        y = self.resmap[2] = mast.Name()
+        building = self.resmap[3] = mast.Name()
+        self.proc(
+            'ulocate building', block_type, enemy,
+            mast.Name('@copper'),
+            x, y, found, building)
+
+    def func_LocateOre(self, material):
+        found = self.resmap[0] = mast.Name()
+        x = self.resmap[1] = mast.Name()
+        y = self.resmap[2] = mast.Name()
+        self.proc(
+            'ulocate ore', mast.Name('core'), mast.Literal(True),
+            material, x, y, found, mast.Name())
+
+    def func_LocateSpawn(self):
+        found = self.resmap[0] = mast.Name()
+        x = self.resmap[1] = mast.Name()
+        y = self.resmap[2] = mast.Name()
+        building = self.resmap[3] = mast.Name()
+        self.proc(
+            'ulocate spawn', mast.Name('core'), mast.Literal(True),
+            mast.Name('@copper'), x, y, found, building)
+
+    def func_LocateDamaged(self):
+        found = self.resmap[0] = mast.Name()
+        x = self.resmap[1] = mast.Name()
+        y = self.resmap[2] = mast.Name()
+        building = self.resmap[3] = mast.Name()
+        self.proc(
+            'ulocate damaged', mast.Name('core'), mast.Literal(True),
+            mast.Name('@copper'), x, y, found, building)
 
     def method_print_flush(self, target):
-        return [mast.ProcedureCall('printflush', [target])]
+        self.proc('printflush', target)
 
     def method_Draw_clear(self, r, g, b):
-        return [mast.ProcedureCall('draw clear', [r, g, b])]
+        self.proc('draw clear', r, g, b)
 
     def method_Draw_color(self, r, g, b, a):
-        return [mast.ProcedureCall('draw color', [r, g, b, a])]
+        self.proc('draw color', r, g, b, a)
 
     def method_Draw_stroke(self, width):
-        return [mast.ProcedureCall('draw stroke', [width])]
+        self.proc('draw stroke', width)
 
     def method_Draw_line(self, x, y, x2, y2):
-        return [mast.ProcedureCall('draw line', [x, y, x2, y2])]
+        self.proc('draw line', x, y, x2, y2)
 
     def method_Draw_rect(self, x, y, width, height):
-        return [mast.ProcedureCall('draw rect', [x, y, width, height])]
+        self.proc('draw rect', x, y, width, height)
 
     def method_Draw_lineRect(self, x, y, width, height):
-        return [mast.ProcedureCall('draw lineRect', [x, y, width, height])]
+        self.proc('draw lineRect', x, y, width, height)
 
     def method_Draw_poly(self, x, y, sides, radius, rotation):
-        return [mast.ProcedureCall('draw poly', [
-            x, y, sides, radius, rotation])]
+        self.proc('draw poly', x, y, sides, radius, rotation)
 
     def method_Draw_linePoly(self, x, y, sides, radius, rotation):
-        return [mast.ProcedureCall('draw linePoly', [
-            x, y, sides, radius, rotation])]
+        self.proc('draw linePoly', x, y, sides, radius, rotation)
 
     def method_Draw_triangle(self, x, y, x2, y2, x3, y3):
-        return [mast.ProcedureCall('draw triangle', [x, y, x2, y2, x3, y3])]
+        self.proc('draw triangle', x, y, x2, y2, x3, y3)
 
     def method_Draw_image(self, x, y, image, size, rotation):
-        return [mast.ProcedureCall('draw image', [
-            x, y, image, size, rotation])]
+        self.proc('draw image', x, y, image, size, rotation)
 
     def method_Draw_flush(self, target):
-        return [mast.ProcedureCall('drawflush', [target])]
+        self.proc('drawflush', target)
 
     def method_Control_setEnabled(self, unit, is_enabled):
-        return [mast.ProcedureCall('control enabled', [unit, is_enabled])]
+        self.proc('control enabled', unit, is_enabled)
 
     def method_Control_shootPosition(self, unit, x, y):
-        return [mast.ProcedureCall('control shoot', [
-            unit, x, y, mast.Literal(1)])]
+        self.proc('control shoot', unit, x, y, mast.Literal(1))
 
     def method_Control_shootObject(self, unit, target):
-        return [mast.ProcedureCall('control shootp', [
-            unit, target, mast.Literal(1)])]
+        self.proc('control shootp', unit, target, mast.Literal(1))
 
     def method_Control_stopShooting(self, unit):
-        return [mast.ProcedureCall('control shoot', [
-            unit, mast.Literal(0), mast.Literal(0), mast.Literal(0)])]
+        self.proc('control shoot', unit, _ZERO, _ZERO, _ZERO)
 
     def method_Control_configure(self, unit, value):
-        return [mast.ProcedureCall('control configure', [unit, value])]
+        self.proc('control configure', unit, value)
+
+    def method_UnitControl_stop(self):
+        self.proc('ucontrol stop', _ZERO, _ZERO, _ZERO, _ZERO, _ZERO)
+
+    def method_UnitControl_move(self, x, y):
+        self.proc('ucontrol move', x, y, _ZERO, _ZERO, _ZERO)
+
+    def method_UnitControl_approach(self, x, y, radius):
+        self.proc('ucontrol approach', x, y, radius, _ZERO, _ZERO)
+
+    def method_UnitControl_boost(self, value):
+        self.proc('ucontrol boost', value, _ZERO, _ZERO, _ZERO, _ZERO)
+
+    def method_UnitControl_pathfind(self):
+        self.proc('ucontrol pathfind', _ZERO, _ZERO, _ZERO, _ZERO, _ZERO)
+
+    def method_UnitControl_target(self, x, y, shoot):
+        self.proc('ucontrol target', x, y, shoot, _ZERO, _ZERO)
+
+    def method_UnitControl_targetp(self, unit, shoot):
+        self.proc('ucontrol targetp', unit, shoot, _ZERO, _ZERO, _ZERO)
+
+    def method_UnitControl_itemDrop(self, unit, amount):
+        self.proc('ucontrol itemDrop', unit, amount, _ZERO, _ZERO, _ZERO)
+
+    def method_UnitControl_itemTake(self, unit, material, amount):
+        self.proc('ucontrol itemTake', unit, material, amount, _ZERO, _ZERO)
+
+    def method_UnitControl_payDrop(self):
+        self.proc('ucontrol payDrop', _ZERO, _ZERO, _ZERO, _ZERO, _ZERO)
+
+    def method_UnitControl_payTake(self, amount):
+        self.proc('ucontrol payTake', amount, _ZERO, _ZERO, _ZERO, _ZERO)
+
+    def method_UnitControl_mine(self, x, y):
+        self.proc('ucontrol mine', x, y, _ZERO, _ZERO, _ZERO)
+
+    def method_UnitControl_flag(self, value):
+        self.proc('ucontrol flag', value, _ZERO, _ZERO, _ZERO, _ZERO)
+
+    def method_UnitControl_build(self, x, y, block, rotation, config):
+        self.proc('ucontrol build', x, y, block, rotation, config)
+
+    def method_UnitControl_getBlock(self, x, y):
+        btype = self.resmap[0] = mast.Name()
+        unit = self.resmap[1] = mast.Name()
+        self.proc('ucontrol getBlock', x, y, btype, unit, _ZERO)
+
+    def method_UnitControl_within(self, x, y, radius):
+        self.resmap[0] = mast.Name()
+        self.proc('ucontrol within', x, y, radius, self.resmap[0], _ZERO)
 
     def _get_object_method(self, expr):
         if not isinstance(expr.value, ast.Name):
@@ -347,19 +464,8 @@ class CallHandler(BaseExpressionHandler):
         if self.expr.keywords:
             raise ValueError('Keyword arguments are not supported')
 
-        arg_vals = []
-        result_pre = []
-        for arg in self.expr.args:
-            val, pre = self.trec(arg)
-            arg_vals.append(val)
-            result_pre.extend(pre)
-
-        result_pre.extend(method(*arg_vals))
-
-        if self._result is None:
-            return mast.Literal(None), result_pre
-        else:
-            return self.result, result_pre
+        arg_vals = [self.run_trec_single(arg) for arg in self.expr.args]
+        method(*arg_vals)
 
 
 _method_values_permitted = 'Using {} methods as values is permitted'
@@ -369,24 +475,33 @@ class AttributeHandler(BaseExpressionHandler):
     AST_CLASS = ast.Attribute
 
     def obj_Material(self, attr):
-        return mast.Name(f'@{attr.replace("_", "-")}'), []
+        self.resmap[0] = mast.Name(f'@{attr.replace("_", "-")}')
 
     def obj_Liquid(self, attr):
-        return mast.Name(f'@{attr.replace("_", "-")}'), []
+        self.resmap[0] = mast.Name(f'@{attr.replace("_", "-")}')
 
     def obj_Property(self, attr):
-        return mast.Name(f'@{attr.replace("_", "-")}'), []
+        self.resmap[0] = mast.Name(f'@{attr.replace("_", "-")}')
+
+    def obj_UnitType(self, attr):
+        self.resmap[0] = mast.Name(f'@{attr.replace("_", "-")}')
+
+    def obj_BlockFlag(self, attr):
+        self.resmap[0] = mast.Name(attr)
+
+    def obj_Block(self, attr):
+        self.resmap[0] = mast.Name(f'@{attr.replace("_", "-")}')
 
     def obj_Target(self, attr):
-        return mast.Name(attr), []
+        self.resmap[0] = mast.Name(attr)
 
     def obj_Sort(self, attr):
         if attr == 'asc':
-            return mast.Literal(1), []
+            self.resmap[0] = mast.Literal(1)
         elif attr == 'desc':
-            return mast.Literal(-1), []
+            self.resmap[0] = mast.Literal(-1)
         else:
-            return mast.Name(attr), []
+            self.resmap[0] = mast.Name(attr)
 
     def obj_Draw(self, attr):
         raise ValueError(_method_values_permitted.format('Draw'))
@@ -423,7 +538,9 @@ def transform_expr(expr):
     if type(expr) not in AST_NODE_MAP:
         raise ValueError(f'Unsupported expression {expr}')
 
-    return AST_NODE_MAP[type(expr)](expr, trec).handle()
+    node = AST_NODE_MAP[type(expr)](expr, trec)
+    node.handle()
+    return node.get_results(), node.pre
 
 
 def test_transform_expr(code):
@@ -480,11 +597,23 @@ def _check_assignment_to_reserved(name):
 class AssignStatementHandler(BaseStatementHandler):
     AST_CLASS = ast.Assign
 
+    def _assign(self, targets, values):
+        pre = []
+        assert len(targets) <= len(values)
+        for target, value in zip(targets, values):
+            pre.append(mast.FunctionCall('set', [value], target))
+        return pre
+
     def named_assign(self, target, value):
         _check_assignment_to_reserved(target.id)
-        retval, pre = transform_expr(value)
-        pre.append(mast.FunctionCall('set', [retval], mast.Name(target.id)))
-        return pre
+        retvals, pre = transform_expr(value)
+        return pre + self._assign([mast.Name(target.id)], retvals)
+
+    def tuple_assign(self, target, value):
+        assert all(isinstance(n, ast.Name) for n in target.elts)
+        tnames = [mast.Name(name.id) for name in target.elts]
+        retvals, pre = transform_expr(value)
+        return pre + self._assign(tnames, retvals)
 
     def memory_assign(self, target, value):
         if not isinstance(target.value, ast.Name):
@@ -493,6 +622,8 @@ class AssignStatementHandler(BaseStatementHandler):
         assert isinstance(target.slice, ast.Index)
         index_val, index_pre = transform_expr(target.slice.value)
         value_val, value_pre = transform_expr(value)
+        index_val = index_val[0]
+        value_val = value_val[0]
         return [
             *index_pre,
             *value_pre,
@@ -503,6 +634,7 @@ class AssignStatementHandler(BaseStatementHandler):
     TARGET_MAP = {
         ast.Name: named_assign,
         ast.Subscript: memory_assign,
+        ast.Tuple: tuple_assign,
     }
 
     def handle(self):
@@ -521,6 +653,7 @@ class AugAssignStatementHandler(BaseStatementHandler):
 
     def named_assign(self, target, op, operand):
         operand_val, pre = transform_expr(operand)
+        operand_val = operand_val[0]
         t = mast.Name(target.id)
         pre.append(mast.FunctionCall(f'op {op}', [t, operand_val], t))
         return pre
@@ -531,6 +664,8 @@ class AugAssignStatementHandler(BaseStatementHandler):
         assert isinstance(target.slice, ast.Index)
         index_val, index_pre = transform_expr(target.slice.value)
         operand_val, operand_pre = transform_expr(operand)
+        index_val = index_val[0]
+        operand_val = operand_val[0]
         op_output = mast.Name()
         cell = mast.Name(target.value.id)
         return [
@@ -567,6 +702,7 @@ class IfStatementHandler(BaseStatementHandler):
         result = []
 
         test_val, test_pre = transform_expr(self.stmt.test)
+        test_val = test_val[0]
         result.extend(test_pre)
         result.append(mast.Jump(
             else_label, 'equal', [test_val, mast.Literal(False)]))

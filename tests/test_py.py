@@ -136,6 +136,77 @@ print(Sensor(duo1, Property.health))
 sensor _r1 duo1 @health
 print _r1
 ==============
+UnitBind(UnitType.poly)
+print(UnitRadar(
+    Target.enemy, Target.ground, Target.any,
+    Sort.health, Sort.desc))
+--------------
+ubind @poly
+uradar enemy ground any health turret1 -1 _r1
+print _r1
+==============
+found, x, y, building = LocateBuilding(BlockFlag.core, True)
+found, x, y = LocateOre(Material.lead)
+found, x, y, building = LocateSpawn()
+found, x, y, building = LocateDamaged()
+--------------
+ulocate building core true @copper _r1 _r2 _r3 _r4
+set found _r3
+set x _r1
+set y _r2
+set building _r4
+ulocate ore core true @lead _r5 _r6 _r7 _r8
+set found _r7
+set x _r5
+set y _r6
+ulocate spawn core true @copper _r9 _r10 _r11 _r12
+set found _r11
+set x _r9
+set y _r10
+set building _r12
+ulocate damaged core true @copper _r13 _r14 _r15 _r16
+set found _r15
+set x _r13
+set y _r14
+set building _r16
+==============
+UnitControl.stop()
+UnitControl.move(10, 20)
+UnitControl.approach(10, 20, 50)
+UnitControl.boost(True)
+UnitControl.pathfind()
+UnitControl.target(10, 20, True)
+UnitControl.targetp(unit, True)
+UnitControl.itemDrop(unit, 100)
+UnitControl.itemTake(unit, Material.lead, 100)
+UnitControl.payDrop()
+UnitControl.payTake(10)
+UnitControl.mine(10, 20)
+UnitControl.flag(5)
+UnitControl.build(10, 20, Block.conveyor, 270, Material.lead)
+btype, unit = UnitControl.getBlock(10, 20)
+result = UnitControl.within(10, 20, 50)
+--------------
+ucontrol stop 0 0 0 0 0
+ucontrol move 10 20 0 0 0
+ucontrol approach 10 20 50 0 0
+ucontrol boost true 0 0 0 0
+ucontrol pathfind 0 0 0 0 0
+ucontrol target 10 20 true 0 0
+ucontrol targetp unit true 0 0 0
+ucontrol itemDrop unit 100 0 0 0
+ucontrol itemTake unit @lead 100 0 0
+ucontrol payDrop 0 0 0 0 0
+ucontrol payTake 10 0 0 0 0
+ucontrol mine 10 20 0 0 0
+ucontrol flag 5 0 0 0 0
+ucontrol build 10 20 @conveyor 270 @lead
+ucontrol getBlock 10 20 _r1 _r2 0
+set btype _r1
+set unit _r2
+ucontrol within 10 20 50 _r3 0
+set result _r3
+==============
 """
 
 
@@ -149,7 +220,7 @@ def test_codegen(pycode, mlogcode):
     'print = 4',
     'b = print',
     'print + 8',
-    'key = getLink',
+    'key = GetLink',
     'Draw[8] = True',
 ])
 def test_reserved_name(pycode):
