@@ -9,6 +9,14 @@ from . import mast
 _PY = (sys.version_info.major, sys.version_info.minor)
 
 
+def _get_ast_slice(node):
+    if _PY >= (3, 9):
+        return node.slice
+    else:
+        assert isinstance(node.slice, ast.Index)
+        return node.slice.value
+
+
 BIN_OP_MAP = {
     ast.Add: 'add',
     ast.Sub: 'sub',
@@ -149,9 +157,8 @@ class SubscriptHandler(BaseExpressionHandler):
 
     def handle(self):
         # memory cell access
-        assert isinstance(self.expr.slice, ast.Index)
         array_val = self.run_trec_single(self.expr.value)
-        index_val = self.run_trec_single(self.expr.slice.value)
+        index_val = self.run_trec_single(_get_ast_slice(self.expr))
         self.resmap[0] = mast.Name()
         self.proc('read', self.resmap[0], array_val, index_val)
 
@@ -230,22 +237,6 @@ def _create_bin_op(token):
         self.resmap[0] = mast.Name()
         self.proc(f'op {token}', self.resmap[0], a, b)
     return fn
-
-
-def _rfill(items, tlen, filler=0):
-    while len(items) < tlen:
-        items.append(mast.Literal(filler))
-    return items
-
-
-def _fill(items, tlen, filler=0):
-    result = []
-    for i in range(tlen):
-        if i in items:
-            result.append(items[i])
-        else:
-            result.append(mast.Literal(filler))
-    return result
 
 
 _ZERO = mast.Literal(0)
@@ -535,6 +526,19 @@ AST_NODE_MAP = {
 }
 
 
+def _create_ast_constant_hack(ast_cls, conv):
+    def cons(anode, *args, **kwargs):
+        return ConstantHandler(ast.Constant(conv(anode)), *args, **kwargs)
+    AST_NODE_MAP[ast_cls] = cons
+
+
+if _PY < (3, 8):
+    _create_ast_constant_hack(ast.Num, lambda expr: expr.n)
+    _create_ast_constant_hack(ast.NameConstant, lambda expr: expr.value)
+    _create_ast_constant_hack(ast.Str, lambda expr: expr.s)
+    _create_ast_constant_hack(ast.Ellipsis, lambda expr: ...)
+
+
 def transform_expr(expr):
     def trec(expr):
         return transform_expr(expr)
@@ -623,14 +627,7 @@ class AssignStatementHandler(BaseStatementHandler):
         if not isinstance(target.value, ast.Name):
             raise ValueError(f'Unsupported assignment target {target}')
         _check_assignment_to_reserved(target.value.id)
-
-        if _PY >= (3, 9):
-            index_expr = target.slice
-        else:
-            assert isinstance(target.slice, ast.Index)
-            index_expr = target.slice.value
-
-        index_val, index_pre = transform_expr(index_expr)
+        index_val, index_pre = transform_expr(_get_ast_slice(target))
         value_val, value_pre = transform_expr(value)
         index_val = index_val[0]
         value_val = value_val[0]
@@ -671,8 +668,7 @@ class AugAssignStatementHandler(BaseStatementHandler):
     def memory_assign(self, target, op, operand):
         if not isinstance(target.value, ast.Name):
             raise ValueError(f'Unsupported assignment target {target}')
-        assert isinstance(target.slice, ast.Index)
-        index_val, index_pre = transform_expr(target.slice.value)
+        index_val, index_pre = transform_expr(_get_ast_slice(target))
         operand_val, operand_pre = transform_expr(operand)
         index_val = index_val[0]
         operand_val = operand_val[0]
