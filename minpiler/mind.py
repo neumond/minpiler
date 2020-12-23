@@ -746,7 +746,6 @@ class WhileStatementHandler(BaseStatementHandler):
         return result
 
 
-
 AST_STATEMENT_MAP = {
     subcls.AST_CLASS: subcls
     for subcls in BaseStatementHandler.__subclasses__()
