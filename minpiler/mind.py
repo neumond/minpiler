@@ -1,8 +1,12 @@
 import ast
+import sys
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
 from . import mast
+
+
+_PY = (sys.version_info.major, sys.version_info.minor)
 
 
 BIN_OP_MAP = {
@@ -619,8 +623,14 @@ class AssignStatementHandler(BaseStatementHandler):
         if not isinstance(target.value, ast.Name):
             raise ValueError(f'Unsupported assignment target {target}')
         _check_assignment_to_reserved(target.value.id)
-        assert isinstance(target.slice, ast.Index)
-        index_val, index_pre = transform_expr(target.slice.value)
+
+        if _PY >= (3, 9):
+            index_expr = target.slice
+        else:
+            assert isinstance(target.slice, ast.Index)
+            index_expr = target.slice.value
+
+        index_val, index_pre = transform_expr(index_expr)
         value_val, value_pre = transform_expr(value)
         index_val = index_val[0]
         value_val = value_val[0]
