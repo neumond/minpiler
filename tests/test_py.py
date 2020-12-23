@@ -74,17 +74,25 @@ print(99 < b)
 ==============
 b = 7
 print(4 and 8 and b, "\\n")
-print(b and False, "\\n")
-print(b and False and True)
+print(b and None, "\\n")
+print(b and None and True)
 --------------
 7
-false
-false
+null
+null
 ==============
 b = 9
-print(False or 0 or b)
+print(None or 0 or b, "\\n")
+print(None or 0, "\\n")
+print(0 or None, "\\n")
+print(None or 0 or 3, "\\n")
+print(None or 0 or 3 or 5)
 --------------
 9
+0
+null
+3
+3
 ==============
 print(abs(-6), ' ', sin(90))
 --------------

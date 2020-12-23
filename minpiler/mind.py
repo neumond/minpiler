@@ -43,8 +43,8 @@ COND_OP_MAP = {
 }
 
 BOOL_OP_MAP = {  # op, shortcut_condition
-    ast.And: ('land', mast.Literal(False)),
-    ast.Or: ('or', mast.Literal(True)),
+    ast.And: ('land', 'equal'),
+    ast.Or: ('or', 'notEqual'),
 }
 
 UNARY_OP_MAP = {
@@ -219,8 +219,9 @@ class BoolOpHandler(BaseExpressionHandler):
         for value in self.expr.values[1:]:
             val = self.run_trec_single(value)
             self.proc(f'op {op}', bool_value, self.resmap[0], val)
-            self.jump(end_label, 'equal', bool_value, shortcut_condition)
             self.proc('set', self.resmap[0], val)
+            self.jump(
+                end_label, shortcut_condition, bool_value, mast.Literal(False))
 
         self.pre.append(end_label)
 
