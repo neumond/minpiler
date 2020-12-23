@@ -122,8 +122,8 @@ class BaseExpressionHandler:
 
     def run_trec_single(self, expr):
         retvals = self.run_trec(expr)
-        if len(retvals) != 1:
-            raise ValueError('Single value expression result expected')
+        if len(retvals) < 1:
+            return mast.Literal(None)
         return retvals[0]
 
     def proc(self, name, *args):
@@ -520,6 +520,139 @@ class AttributeHandler(BaseExpressionHandler):
         return method(self.expr.attr)
 
 
+# Statements ===================================
+
+
+class ExprStatementHandler(BaseExpressionHandler):
+    AST_CLASS = ast.Expr
+
+    def handle(self):
+        self.run_trec(self.expr.value)
+
+
+def _check_assignment_to_reserved(name):
+    if name in RESERVED_NAMES:
+        raise ValueError(f'The name {name} is reserved')
+
+
+class AssignStatementHandler(BaseExpressionHandler):
+    AST_CLASS = ast.Assign
+
+    def _assign(self, targets, values):
+        assert len(targets) <= len(values)
+        for target, value in zip(targets, values):
+            self.proc('set', target, value)
+
+    def named_assign(self, target, value):
+        _check_assignment_to_reserved(target.id)
+        retvals = self.run_trec(value)
+        self._assign([mast.Name(target.id)], retvals)
+
+    def tuple_assign(self, target, value):
+        assert all(isinstance(n, ast.Name) for n in target.elts)
+        tnames = [mast.Name(name.id) for name in target.elts]
+        retvals = self.run_trec(value)
+        self._assign(tnames, retvals)
+
+    def memory_assign(self, target, value):
+        if not isinstance(target.value, ast.Name):
+            raise ValueError(f'Unsupported assignment target {target}')
+        _check_assignment_to_reserved(target.value.id)
+        index_val = self.run_trec_single(_get_ast_slice(target))
+        value_val = self.run_trec_single(value)
+        self.proc('write', value_val, mast.Name(target.value.id), index_val)
+
+    TARGET_MAP = {
+        ast.Name: named_assign,
+        ast.Subscript: memory_assign,
+        ast.Tuple: tuple_assign,
+    }
+
+    def handle(self):
+        if len(self.expr.targets) != 1:
+            raise ValueError(
+                'Only single target can be used in assignment: a = 3')
+        target = self.expr.targets[0]
+        if type(target) not in self.TARGET_MAP:
+            raise ValueError(f'Unsupported assignment target {target}')
+        method = self.TARGET_MAP[type(target)]
+        method(self, target, self.expr.value)
+
+
+class AugAssignStatementHandler(BaseExpressionHandler):
+    AST_CLASS = ast.AugAssign
+
+    def named_assign(self, target, op, operand):
+        operand_val = self.run_trec_single(operand)
+        t = mast.Name(target.id)
+        self.proc(f'op {op}', t, t, operand_val)
+
+    def memory_assign(self, target, op, operand):
+        if not isinstance(target.value, ast.Name):
+            raise ValueError(f'Unsupported assignment target {target}')
+        index_val = self.run_trec_single(_get_ast_slice(target))
+        operand_val = self.run_trec_single(operand)
+        op_output = mast.Name()
+        cell = mast.Name(target.value.id)
+        self.proc('read', op_output, cell, index_val)
+        self.proc(f'op {op}', op_output, op_output, operand_val)
+        self.proc('write', op_output, cell, index_val)
+
+    TARGET_MAP = {
+        ast.Name: named_assign,
+        ast.Subscript: memory_assign,
+    }
+
+    def handle(self):
+        target = self.expr.target
+        if type(target) not in self.TARGET_MAP:
+            raise ValueError(f'Unsupported assignment target {target}')
+        method = self.TARGET_MAP[type(target)]
+        op = get_type_map(BIN_OP_MAP, self.expr.op, 'BinOp')
+        method(self, target, op, self.expr.value)
+
+
+class IfStatementHandler(BaseExpressionHandler):
+    AST_CLASS = ast.If
+
+    def handle(self):
+        end_label = mast.Label()
+        else_label = mast.Label() if self.expr.orelse else end_label
+
+        test_val = self.run_trec_single(self.expr.test)
+        self.jump(else_label, 'equal', test_val, mast.Literal(False))
+
+        for stmt in self.expr.body:
+            self.run_trec(stmt)
+
+        if self.expr.orelse:
+            self.jump(end_label, 'always')
+            self.pre.append(else_label)
+
+            for stmt in self.expr.orelse:
+                self.run_trec(stmt)
+
+        self.pre.append(end_label)
+
+
+class WhileStatementHandler(BaseExpressionHandler):
+    AST_CLASS = ast.While
+
+    def handle(self):
+        loop_label = mast.Label()
+        end_label = mast.Label()
+
+        self.pre.append(loop_label)
+        test_val = self.run_trec_single(self.expr.test)
+        self.jump(end_label, 'equal', test_val, mast.Literal(False))
+
+        for stmt in self.expr.body:
+            self.run_trec(stmt)
+
+        self.jump(loop_label, 'always')
+        self.pre.append(end_label)
+
+
 AST_NODE_MAP = {
     subcls.AST_CLASS: subcls
     for subcls in BaseExpressionHandler.__subclasses__()
@@ -549,255 +682,3 @@ def transform_expr(expr):
     node = AST_NODE_MAP[type(expr)](expr, trec)
     node.handle()
     return node.get_results(), node.pre
-
-
-def test_transform_expr(code):
-    assert len(ast.parse(code).body) == 1
-    expr = ast.parse(code).body[0]
-    assert isinstance(expr, ast.Expr)
-    val, lines = transform_expr(expr.value)
-    print('-----')
-    lines.append(mast.ProcedureCall('print', [val]))
-    for line in mast.dump(lines):
-        print(line)
-
-
-# test_transform_expr('2+2')
-# test_transform_expr('2 + 2 * 2 + 8 + 6 * 9 * 3')
-# test_transform_expr('-5')
-# test_transform_expr('cell["kek"]')
-# test_transform_expr('max(min(2, 8), 3 + 3)')
-# test_transform_expr('print(1, 2 + 7, 3, print(), "lol")')
-# test_transform_expr('printflush(message1)')
-# test_transform_expr('Material.copper')
-# test_transform_expr('exit()')
-# test_transform_expr('1 >= a > 3')
-# test_transform_expr('True and True or False and 3')
-# exit()
-
-
-@dataclass
-class BaseStatementHandler:
-    stmt: Any
-
-    # AST_CLASS = ast.Xxx
-
-    def dev_dump(self):
-        print(ast.dump(self.stmt))
-
-    def handle(self):
-        raise NotImplementedError
-
-
-class ExprStatementHandler(BaseStatementHandler):
-    AST_CLASS = ast.Expr
-
-    def handle(self):
-        retval, pre = transform_expr(self.stmt.value)
-        return pre
-
-
-def _check_assignment_to_reserved(name):
-    if name in RESERVED_NAMES:
-        raise ValueError(f'The name {name} is reserved')
-
-
-class AssignStatementHandler(BaseStatementHandler):
-    AST_CLASS = ast.Assign
-
-    def _assign(self, targets, values):
-        pre = []
-        assert len(targets) <= len(values)
-        for target, value in zip(targets, values):
-            pre.append(mast.FunctionCall('set', [value], target))
-        return pre
-
-    def named_assign(self, target, value):
-        _check_assignment_to_reserved(target.id)
-        retvals, pre = transform_expr(value)
-        return pre + self._assign([mast.Name(target.id)], retvals)
-
-    def tuple_assign(self, target, value):
-        assert all(isinstance(n, ast.Name) for n in target.elts)
-        tnames = [mast.Name(name.id) for name in target.elts]
-        retvals, pre = transform_expr(value)
-        return pre + self._assign(tnames, retvals)
-
-    def memory_assign(self, target, value):
-        if not isinstance(target.value, ast.Name):
-            raise ValueError(f'Unsupported assignment target {target}')
-        _check_assignment_to_reserved(target.value.id)
-        index_val, index_pre = transform_expr(_get_ast_slice(target))
-        value_val, value_pre = transform_expr(value)
-        index_val = index_val[0]
-        value_val = value_val[0]
-        return [
-            *index_pre,
-            *value_pre,
-            mast.ProcedureCall('write', [
-                value_val, mast.Name(target.value.id), index_val]),
-        ]
-
-    TARGET_MAP = {
-        ast.Name: named_assign,
-        ast.Subscript: memory_assign,
-        ast.Tuple: tuple_assign,
-    }
-
-    def handle(self):
-        if len(self.stmt.targets) != 1:
-            raise ValueError(
-                'Only single target can be used in assignment: a = 3')
-        target = self.stmt.targets[0]
-        if type(target) not in self.TARGET_MAP:
-            raise ValueError(f'Unsupported assignment target {target}')
-        method = self.TARGET_MAP[type(target)]
-        return method(self, target, self.stmt.value)
-
-
-class AugAssignStatementHandler(BaseStatementHandler):
-    AST_CLASS = ast.AugAssign
-
-    def named_assign(self, target, op, operand):
-        operand_val, pre = transform_expr(operand)
-        operand_val = operand_val[0]
-        t = mast.Name(target.id)
-        pre.append(mast.FunctionCall(f'op {op}', [t, operand_val], t))
-        return pre
-
-    def memory_assign(self, target, op, operand):
-        if not isinstance(target.value, ast.Name):
-            raise ValueError(f'Unsupported assignment target {target}')
-        index_val, index_pre = transform_expr(_get_ast_slice(target))
-        operand_val, operand_pre = transform_expr(operand)
-        index_val = index_val[0]
-        operand_val = operand_val[0]
-        op_output = mast.Name()
-        cell = mast.Name(target.value.id)
-        return [
-            *index_pre,
-            *operand_pre,
-            mast.FunctionCall('read', [cell, index_val], op_output),
-            mast.FunctionCall(f'op {op}', [op_output, operand_val], op_output),
-            mast.ProcedureCall('write', [op_output, cell, index_val]),
-        ]
-
-    TARGET_MAP = {
-        ast.Name: named_assign,
-        ast.Subscript: memory_assign,
-    }
-
-    def handle(self):
-        target = self.stmt.target
-        if type(target) not in self.TARGET_MAP:
-            raise ValueError(f'Unsupported assignment target {target}')
-        method = self.TARGET_MAP[type(target)]
-        if type(self.stmt.op) not in BIN_OP_MAP:
-            raise ValueError(f'Unsupported BinOp {self.stmt.op}')
-        return method(
-            self, target, BIN_OP_MAP[type(self.stmt.op)], self.stmt.value)
-
-
-class IfStatementHandler(BaseStatementHandler):
-    AST_CLASS = ast.If
-
-    def handle(self):
-        end_label = mast.Label()
-        else_label = mast.Label() if self.stmt.orelse else end_label
-
-        result = []
-
-        test_val, test_pre = transform_expr(self.stmt.test)
-        test_val = test_val[0]
-        result.extend(test_pre)
-        result.append(mast.Jump(
-            else_label, 'equal', [test_val, mast.Literal(False)]))
-
-        for stmt in self.stmt.body:
-            result.extend(transform_statement(stmt))
-
-        if self.stmt.orelse:
-            result.append(mast.Jump(end_label, 'always', []))
-            result.append(else_label)
-
-            for stmt in self.stmt.orelse:
-                result.extend(transform_statement(stmt))
-
-        result.append(end_label)
-        return result
-
-
-class WhileStatementHandler(BaseStatementHandler):
-    AST_CLASS = ast.While
-
-    def handle(self):
-        loop_label = mast.Label()
-        end_label = mast.Label()
-
-        result = []
-        result.append(loop_label)
-
-        test_val, test_pre = transform_expr(self.stmt.test)
-        test_val = test_val[0]
-        result.extend(test_pre)
-        result.append(mast.Jump(
-            end_label, 'equal', [test_val, mast.Literal(False)]))
-
-        for stmt in self.stmt.body:
-            result.extend(transform_statement(stmt))
-
-        result.append(mast.Jump(loop_label, 'always', []))
-
-        result.append(end_label)
-        return result
-
-
-AST_STATEMENT_MAP = {
-    subcls.AST_CLASS: subcls
-    for subcls in BaseStatementHandler.__subclasses__()
-}
-
-
-def transform_statement(stmt):
-    if type(stmt) not in AST_STATEMENT_MAP:
-        raise ValueError(f'Unsupported statement {stmt}')
-
-    return AST_STATEMENT_MAP[type(stmt)](stmt).handle()
-
-
-def test_transform_statement(code, line_nums=True):
-    print('----')
-    program = []
-    for stmt in ast.parse(code).body:
-        program.extend(transform_statement(stmt))
-    for index, line in enumerate(mast.dump(program)):
-        if line_nums:
-            line = f'{index}. {line}'
-        print(line)
-
-
-# test_transform_statement("""
-# print(2, 6, 7)
-# print(2, 6, cell1[3])
-# printflush(message1)
-# """)
-# test_transform_statement("""
-# 2 + 2
-# 3 + 3
-# """)
-# test_transform_statement("""
-# a = 6
-# b = 2.3 + 5.8
-# cell1[a] = b
-# a += 1
-# cell1[a + 3] *= b + 9
-# """)
-# test_transform_statement("""
-# if a > 3:
-#     print('Yes')
-# elif a - b:
-#     print('Maybe')
-# else:
-#     print('No')
-# """)
-# exit()

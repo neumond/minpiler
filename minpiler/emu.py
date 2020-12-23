@@ -49,6 +49,8 @@ class Var:
             return str(v).rstrip('0').rstrip('.')
         elif isinstance(v, dict):
             return 'cell'
+        elif isinstance(v, str):
+            return v.replace(r'\n', '\n')
         else:
             return str(v)
 

@@ -3,11 +3,41 @@ import pytest
 from minpiler import cmdline, emu, mparse, test_utils
 
 
+# test_transform_expr('Material.copper')
+# test_transform_expr('exit()')
+# test_transform_expr('1 >= a > 3')
+# test_transform_expr('True and True or False and 3')
+
+
+# test_transform_statement("""
+# if a > 3:
+#     print('Yes')
+# elif a - b:
+#     print('Maybe')
+# else:
+#     print('No')
+# """)
+# exit()
+
+
 PROGRAMS = """
-print("hello")
+print("hello\\n")
+print(2 + 2, "\\n")
+print(2 + 2 * 2 + 8 + 6 * 9 * 3, "\\n")
+print(-5, "\\n")
+print(+5, "\\n")
+print(max(min(2, 8), 3 + 3), "\\n")
+print("line", 1, 2, print(), 3)
 --------------
 hello
+4
+176
+-5
+5
+6
+line12null3
 ==============
+2 + 6
 a = -1
 a += 6
 if a > 0:
@@ -43,9 +73,13 @@ print(99 < b)
 1010
 ==============
 b = 7
-print(4 and 8 and b)
+print(4 and 8 and b, "\\n")
+print(b and False, "\\n")
+print(b and False and True)
 --------------
 7
+false
+false
 ==============
 b = 9
 print(False or 0 or b)

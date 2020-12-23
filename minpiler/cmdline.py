@@ -15,7 +15,8 @@ parser.add_argument(
 def py_to_mind(code):
     program = []
     for stmt in ast.parse(code).body:
-        program.extend(mind.transform_statement(stmt))
+        _, lines = mind.transform_expr(stmt)
+        program.extend(lines)
     return '\n'.join(mast.dump(program)) + '\n'
 
 
