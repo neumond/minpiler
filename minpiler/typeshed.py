@@ -174,15 +174,11 @@ class Control:
         pass
 
     @staticmethod
-    def shootPosition(unit: MObject, x: float, y: float) -> None:
+    def targetPosition(unit: MObject, x: float, y: float, shoot: bool) -> None:
         pass
 
     @staticmethod
-    def shootObject(unit: MObject, target: MObject) -> None:
-        pass
-
-    @staticmethod
-    def stopShooting(unit: MObject) -> None:
+    def targetObject(unit: MObject, target: MObject, shoot: bool) -> None:
         pass
 
     @staticmethod

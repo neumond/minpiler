@@ -176,15 +176,13 @@ getlink _r1 4
 print _r1
 ==============
 Control.setEnabled(conveyor1, True)
-Control.shootPosition(duo1, 20, 30)
-Control.shootObject(duo2, enemy1)
-Control.stopShooting(duo3)
+Control.targetPosition(duo1, 20, 30, True)
+Control.targetObject(duo2, enemy1, False)
 Control.configure(unloader1, Material.copper)
 --------------
 control enabled conveyor1 true
-control shoot duo1 20 30 1
-control shootp duo2 enemy1 1
-control shoot duo3 0 0 0
+control shoot duo1 20 30 true
+control shootp duo2 enemy1 false
 control configure unloader1 @copper
 ==============
 print(Radar(

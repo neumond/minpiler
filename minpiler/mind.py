@@ -372,14 +372,11 @@ class CallHandler(BaseExpressionHandler):
     def method_Control_setEnabled(self, unit, is_enabled):
         self.proc('control enabled', unit, is_enabled)
 
-    def method_Control_shootPosition(self, unit, x, y):
-        self.proc('control shoot', unit, x, y, mast.Literal(1))
+    def method_Control_targetPosition(self, unit, x, y, shoot):
+        self.proc('control shoot', unit, x, y, shoot)
 
-    def method_Control_shootObject(self, unit, target):
-        self.proc('control shootp', unit, target, mast.Literal(1))
-
-    def method_Control_stopShooting(self, unit):
-        self.proc('control shoot', unit, _ZERO, _ZERO, _ZERO)
+    def method_Control_targetObject(self, unit, target, shoot):
+        self.proc('control shootp', unit, target, shoot)
 
     def method_Control_configure(self, unit, value):
         self.proc('control configure', unit, value)
