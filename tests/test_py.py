@@ -75,11 +75,13 @@ print(99 < b)
 b = 7
 print(4 and 8 and b, "\\n")
 print(b and None, "\\n")
-print(b and None and True)
+print(b and None and True, "\\n")
+print(False and True)
 --------------
 7
 null
 null
+0
 ==============
 b = 9
 print(None or 0 or b, "\\n")
@@ -105,11 +107,23 @@ while i < 5:
 --------------
 01234
 ==============
+pos = 10
+vel = -20
+pos += vel
+if pos < 0 and vel < 0:
+    vel = -vel
+if pos > 100 and vel > 0:
+    vel = -vel
+print(pos, ' ', vel)
+--------------
+-10 20
+==============
 """
 
 
 @pytest.mark.parametrize('code,result', test_utils.parse_programs(PROGRAMS))
 def test_programs(code, result):
+    print(cmdline.py_to_mind(code))
     ast = mparse.parse(cmdline.py_to_mind(code))
     assert emu.execute(ast, {
         'cell1': {},

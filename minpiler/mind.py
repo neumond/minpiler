@@ -197,6 +197,7 @@ class CompareHandler(BaseExpressionHandler):
             b_val = self.run_trec_single(comparator)
             self.proc(f'op {op}', self.resmap[0], a_val, b_val)
             self.jump(end_label, 'equal', self.resmap[0], mast.Literal(False))
+
             a_val = b_val
 
         self.pre.append(end_label)
@@ -213,6 +214,8 @@ class BoolOpHandler(BaseExpressionHandler):
         self.resmap[0] = mast.Name()
         val = self.run_trec_single(self.expr.values[0])
         self.proc('set', self.resmap[0], val)
+        self.jump(
+            end_label, shortcut_condition, val, mast.Literal(False))
 
         bool_value = mast.Name()
 
