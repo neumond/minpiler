@@ -119,6 +119,11 @@ print(pos, ' ', vel)
 --------------
 -10 20
 ==============
+print(True if 2 > 3 else False)
+print(True if 2 < 3 else False)
+--------------
+01
+==============
 """
 
 

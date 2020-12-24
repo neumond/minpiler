@@ -1,3 +1,12 @@
+# from void import M, scatter1, sorter1
+
+
+# if switch1.enabled:
+#     sorter1.configure(M.copper)
+# else:
+
+
+
 if Sensor(switch1, Property.enabled):
     Control.configure(sorter1, Material.copper)
 else:

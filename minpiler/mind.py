@@ -230,6 +230,29 @@ class BoolOpHandler(BaseExpressionHandler):
         self.pre.append(end_label)
 
 
+class IfExpHandler(BaseExpressionHandler):
+    AST_CLASS = ast.IfExp
+
+    def handle(self):
+        else_label = mast.Label()
+        end_label = mast.Label()
+
+        self.resmap[0] = mast.Name()
+        cond = self.run_trec_single(self.expr.test)
+        self.jump(else_label, 'equal', cond, mast.Literal(False))
+
+        val = self.run_trec_single(self.expr.body)
+        self.proc('set', self.resmap[0], val)
+        self.jump(end_label, 'always')
+
+        self.pre.append(else_label)
+
+        val = self.run_trec_single(self.expr.orelse)
+        self.proc('set', self.resmap[0], val)
+
+        self.pre.append(end_label)
+
+
 def _create_unary_op(token):
     def fn(self, a):
         self.resmap[0] = mast.Name()
