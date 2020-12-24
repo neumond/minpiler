@@ -13,4 +13,9 @@ sx = Sensor(scatter1, Property.x) + sin(time) * 10
 sy = Sensor(scatter1, Property.y) + cos(time) * 10
 
 
+# TODO: this could be
+# scatter1.x
+# scatter1.targetPosition(sx, sy, switch2.enabled)
+
+
 Control.targetPosition(scatter1, sx, sy, Sensor(switch2, Property.enabled))

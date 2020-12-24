@@ -40,6 +40,7 @@ COND_OP_MAP = {
     ast.LtE: 'lessThanEq',
     ast.Gt: 'greaterThan',
     ast.GtE: 'greaterThanEq',
+    ast.Is: 'equal',
 }
 
 BOOL_OP_MAP = {  # op, shortcut_condition

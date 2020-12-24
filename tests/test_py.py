@@ -69,8 +69,9 @@ print(4 <= b <= 8)
 print(b > 8)
 print(b == 6)
 print(99 < b)
+print(None is None)
 --------------
-1010
+10101
 ==============
 b = 7
 print(4 and 8 and b, "\\n")

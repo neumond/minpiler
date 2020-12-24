@@ -22,7 +22,7 @@ Draw.color(255, 0, 0, 255)
 # Draw.linePoly(40, 100, 5, 30, 10)
 
 
-if setup == None or Sensor(switch1, Property.enabled):
+if setup is None or Sensor(switch1, Property.enabled):
     t1x = rand(dsize)
     t1y = rand(dsize)
     t2x = rand(dsize)
