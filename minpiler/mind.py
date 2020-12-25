@@ -478,17 +478,17 @@ class CallHandler(BaseExpressionHandler):
     def func__M__unit__pathfind(self):
         self.proc('ucontrol pathfind', _ZERO, _ZERO, _ZERO, _ZERO, _ZERO)
 
-    def func__M__unit__target(self, x, y, shoot):
+    def func__M__unit__targetPosition(self, x, y, shoot):
         self.proc('ucontrol target', x, y, shoot, _ZERO, _ZERO)
 
-    def func__M__unit__targetp(self, unit, shoot):
+    def func__M__unit__targetObject(self, unit, shoot):
         self.proc('ucontrol targetp', unit, shoot, _ZERO, _ZERO, _ZERO)
 
-    def func__M__unit__itemDrop(self, unit, amount):
-        self.proc('ucontrol itemDrop', unit, amount, _ZERO, _ZERO, _ZERO)
+    def func__M__unit__itemDrop(self, target, amount):
+        self.proc('ucontrol itemDrop', target, amount, _ZERO, _ZERO, _ZERO)
 
-    def func__M__unit__itemTake(self, unit, material, amount):
-        self.proc('ucontrol itemTake', unit, material, amount, _ZERO, _ZERO)
+    def func__M__unit__itemTake(self, target, material, amount):
+        self.proc('ucontrol itemTake', target, material, amount, _ZERO, _ZERO)
 
     def func__M__unit__payDrop(self):
         self.proc('ucontrol payDrop', _ZERO, _ZERO, _ZERO, _ZERO, _ZERO)
@@ -499,7 +499,7 @@ class CallHandler(BaseExpressionHandler):
     def func__M__unit__mine(self, x, y):
         self.proc('ucontrol mine', x, y, _ZERO, _ZERO, _ZERO)
 
-    def func__M__unit__flag(self, value):
+    def func__M__unit__setFlag(self, value):
         self.proc('ucontrol flag', value, _ZERO, _ZERO, _ZERO, _ZERO)
 
     def func__M__unit__build(self, x, y, block, rotation, config):
@@ -566,11 +566,11 @@ class AttributeHandler(BaseExpressionHandler):
             'sensor', self.resmap[0],
             mast.Name(unit), mast.Name(f'@{prop.replace("_", "-")}'))
 
+    def prop__M__unit__1(self, prop):
+        self.prop__1__1('@unit', prop)
+
     def prop__M__at__unit__1(self, prop):
-        self.resmap[0] = mast.Name()
-        self.proc(
-            'sensor', self.resmap[0],
-            mast.Name('@unit'), mast.Name(f'@{prop.replace("_", "-")}'))
+        self.prop__M__unit__1(prop)
 
     _resolver = staticmethod(build_attr_index({
         k[len('prop__'):]: v

@@ -10,10 +10,10 @@ if time > 360:
 
 M.unit.bind(M.at.nova)
 
-f = M.at.unit.flag
+f = M.unit.flag
 if f == 0:
     allocated_flags += 1
-    M.unit.flag(allocated_flags)
+    M.unit.setFlag(allocated_flags)
     f = allocated_flags
 
 found, bx, by, building = M.locate.building(M.at.core, False)
@@ -22,4 +22,4 @@ if found:
     sy = by + M.cos(time + f * 30) * 10
 
     M.unit.move(sx, sy)
-    M.unit.target(bx, by, True)
+    M.unit.targetPosition(bx, by, True)
