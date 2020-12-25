@@ -1,21 +1,25 @@
+from void import (
+    M,
+    time, allocated_flags,
+)
+
+
 time += 0.5
 if time > 360:
     time %= 360
 
-UnitBind(UnitType.nova)
+M.unit.bind(M.at.nova)
 
-f = Sensor(Material.unit, Property.flag)
+f = M.at.unit.flag
 if f == 0:
     allocated_flags += 1
-    UnitControl.flag(allocated_flags)
+    M.unit.flag(allocated_flags)
     f = allocated_flags
 
-found, bx, by, building = LocateBuilding(BlockFlag.core, False)
+found, bx, by, building = M.locate.building(M.at.core, False)
 if found:
-    sx = bx + sin(time + f * 30) * 10
-    sy = by + cos(time + f * 30) * 10
+    sx = bx + M.sin(time + f * 30) * 10
+    sy = by + M.cos(time + f * 30) * 10
 
-    UnitControl.move(sx, sy)
-    UnitControl.target(bx, by, False)
-    # Control.targetPosition(Material.unit, bx, by, True)
-
+    M.unit.move(sx, sy)
+    M.unit.target(bx, by, True)

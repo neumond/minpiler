@@ -1,30 +1,15 @@
-# from void import M, scatter1, sorter1
+from void import (
+    M,
+    scatter1, sorter1, switch1, switch2,
+    time,
+)
 
-
-# if switch1.enabled:
-#     sorter1.configure(M.copper)
-# else:
-
-
-
-if Sensor(switch1, Property.enabled):
-    Control.configure(sorter1, Material.copper)
-else:
-    Control.configure(sorter1, Material.lead)
-
+sorter1.configure(M.at.copper if switch1.enabled else M.at.lead)
 
 time += 3
 if time > 360:
     time %= 360
 
-
-sx = Sensor(scatter1, Property.x) + sin(time) * 10
-sy = Sensor(scatter1, Property.y) + cos(time) * 10
-
-
-# TODO: this could be
-# scatter1.x
-# scatter1.targetPosition(sx, sy, switch2.enabled)
-
-
-Control.targetPosition(scatter1, sx, sy, Sensor(switch2, Property.enabled))
+sx = scatter1.x + M.sin(time) * 10
+sy = scatter1.y + M.cos(time) * 10
+scatter1.targetPosition(sx, sy, switch2.enabled)

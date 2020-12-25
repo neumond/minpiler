@@ -3,31 +3,14 @@ import pytest
 from minpiler import cmdline, emu, mparse, test_utils
 
 
-# test_transform_expr('Material.copper')
-# test_transform_expr('exit()')
-# test_transform_expr('1 >= a > 3')
-# test_transform_expr('True and True or False and 3')
-
-
-# test_transform_statement("""
-# if a > 3:
-#     print('Yes')
-# elif a - b:
-#     print('Maybe')
-# else:
-#     print('No')
-# """)
-# exit()
-
-
 PROGRAMS = """
-print("hello\\n")
-print(2 + 2, "\\n")
-print(2 + 2 * 2 + 8 + 6 * 9 * 3, "\\n")
-print(-5, "\\n")
-print(+5, "\\n")
-print(max(min(2, 8), 3 + 3), "\\n")
-print("line", 1, 2, print(), 3)
+M.print("hello\\n")
+M.print(2 + 2, "\\n")
+M.print(2 + 2 * 2 + 8 + 6 * 9 * 3, "\\n")
+M.print(-5, "\\n")
+M.print(+5, "\\n")
+M.print(M.max(M.min(2, 8), 3 + 3), "\\n")
+M.print("line", 1, 2, M.print(), 3)
 --------------
 hello
 4
@@ -41,43 +24,43 @@ line12null3
 a = -1
 a += 6
 if a > 0:
-    print("a > 0")
+    M.print("a > 0")
 else:
-    print("a <= 0")
+    M.print("a <= 0")
 --------------
 a > 0
 ==============
-print(1)
-exit()
-print(2)
+M.print(1)
+M.exit()
+M.print(2)
 --------------
 1
 ==============
-print("Hi ", 2 + min(2, 8) * 2)
+M.print("Hi ", 2 + M.min(2, 8) * 2)
 --------------
 Hi 6
 ==============
 cell1[8] = 9
 index = 8
 cell1[index] += 3
-print(cell1[index - 2 + 2])
+M.print(cell1[index - 2 + 2])
 --------------
 12
 ==============
 b = 6
-print(4 <= b <= 8)
-print(b > 8)
-print(b == 6)
-print(99 < b)
-print(None is None)
+M.print(4 <= b <= 8)
+M.print(b > 8)
+M.print(b == 6)
+M.print(99 < b)
+M.print(None is None)
 --------------
 10101
 ==============
 b = 7
-print(4 and 8 and b, "\\n")
-print(b and None, "\\n")
-print(b and None and True, "\\n")
-print(False and True)
+M.print(4 and 8 and b, "\\n")
+M.print(b and None, "\\n")
+M.print(b and None and True, "\\n")
+M.print(False and True)
 --------------
 7
 null
@@ -85,11 +68,11 @@ null
 0
 ==============
 b = 9
-print(None or 0 or b, "\\n")
-print(None or 0, "\\n")
-print(0 or None, "\\n")
-print(None or 0 or 3, "\\n")
-print(None or 0 or 3 or 5)
+M.print(None or 0 or b, "\\n")
+M.print(None or 0, "\\n")
+M.print(0 or None, "\\n")
+M.print(None or 0 or 3, "\\n")
+M.print(None or 0 or 3 or 5)
 --------------
 9
 0
@@ -97,13 +80,13 @@ null
 3
 3
 ==============
-print(abs(-6), ' ', sin(90))
+M.print(M.abs(-6), ' ', M.sin(90))
 --------------
 6 1
 ==============
 i = 0
 while i < 5:
-    print(i)
+    M.print(i)
     i += 1
 --------------
 01234
@@ -115,12 +98,12 @@ if pos < 0 and vel < 0:
     vel = -vel
 if pos > 100 and vel > 0:
     vel = -vel
-print(pos, ' ', vel)
+M.print(pos, ' ', vel)
 --------------
 -10 20
 ==============
-print(True if 2 > 3 else False)
-print(True if 2 < 3 else False)
+M.print(True if 2 > 3 else False)
+M.print(True if 2 < 3 else False)
 --------------
 01
 ==============
@@ -138,17 +121,17 @@ def test_programs(code, result):
 
 CODEGEN = """
 ==============
-Draw.clear(1, 2, 3)
-Draw.color(1, 2, 3, 200)
-Draw.stroke(3)
-Draw.line(20, 20, 50, 50)
-Draw.rect(20, 20, 10, 10)
-Draw.lineRect(20, 20, 10, 10)
-Draw.poly(50, 50, 6, 30, 10)
-Draw.linePoly(50, 50, 6, 30, 10)
-Draw.triangle(20, 20, 60, 60, 30, 10)
-Draw.image(50, 50, Material.copper, 32, 0)
-Draw.flush(display1)
+M.draw.clear(1, 2, 3)
+M.draw.color(1, 2, 3, 200)
+M.draw.stroke(3)
+M.draw.line(20, 20, 50, 50)
+M.draw.rect(20, 20, 10, 10)
+M.draw.lineRect(20, 20, 10, 10)
+M.draw.poly(50, 50, 6, 30, 10)
+M.draw.linePoly(50, 50, 6, 30, 10)
+M.draw.triangle(20, 20, 60, 60, 30, 10)
+M.draw.image(50, 50, M.at.copper, 32, 0)
+display1.drawFlush()
 --------------
 draw clear 1 2 3
 draw color 1 2 3 200
@@ -162,60 +145,63 @@ draw triangle 20 20 60 60 30 10
 draw image 50 50 @copper 32 0
 drawflush display1
 ==============
-print(1)
-print(b)
-print('string')
-print.flush(message1)
+M.print(1)
+M.print(b)
+M.print('string')
+message1.printFlush()
 --------------
 print 1
 print b
 print "string"
 printflush message1
 ==============
-exit()
+M.exit()
 --------------
 end
 ==============
-print(GetLink(4))
+M.print(M.getLink(4))
 --------------
 getlink _r1 4
 print _r1
 ==============
-Control.setEnabled(conveyor1, True)
-Control.targetPosition(duo1, 20, 30, True)
-Control.targetObject(duo2, enemy1, False)
-Control.configure(unloader1, Material.copper)
+conveyor1.setEnabled(True)
+duo1.targetPosition(20, 30, True)
+duo2.targetObject(enemy1, False)
+unloader1.configure(M.at.copper)
 --------------
 control enabled conveyor1 true
 control shoot duo1 20 30 true
 control shootp duo2 enemy1 false
 control configure unloader1 @copper
 ==============
-print(Radar(
-    duo1, Target.enemy, Target.flying, Target.any,
-    Sort.distance, Sort.asc))
+M.print(duo1.radar(
+    M.at.enemy, M.at.flying, M.at.any,
+    M.at.distance, M.at.asc))
 --------------
 radar enemy flying any distance duo1 1 _r1
 print _r1
 ==============
-print(Sensor(duo1, Property.health))
+M.print(duo1.sensor(M.at.health))
+M.print(duo1.health)
 --------------
 sensor _r1 duo1 @health
 print _r1
+sensor _r2 duo1 @health
+print _r2
 ==============
-UnitBind(UnitType.poly)
-print(UnitRadar(
-    Target.enemy, Target.ground, Target.any,
-    Sort.health, Sort.desc))
+M.unit.bind(M.at.poly)
+M.print(M.unit.radar(
+    M.at.enemy, M.at.ground, M.at.any,
+    M.at.health, M.at.desc))
 --------------
 ubind @poly
 uradar enemy ground any health turret1 -1 _r1
 print _r1
 ==============
-found, x, y, building = LocateBuilding(BlockFlag.core, True)
-found, x, y = LocateOre(Material.lead)
-found, x, y, building = LocateSpawn()
-found, x, y, building = LocateDamaged()
+found, x, y, building = M.locate.building(M.at.core, True)
+found, x, y = M.locate.ore(M.at.lead)
+found, x, y, building = M.locate.spawn()
+found, x, y, building = M.locate.damaged()
 --------------
 ulocate building core true @copper _r1 _r2 _r3 _r4
 set found _r3
@@ -237,22 +223,22 @@ set x _r13
 set y _r14
 set building _r16
 ==============
-UnitControl.stop()
-UnitControl.move(10, 20)
-UnitControl.approach(10, 20, 50)
-UnitControl.boost(True)
-UnitControl.pathfind()
-UnitControl.target(10, 20, True)
-UnitControl.targetp(unit, True)
-UnitControl.itemDrop(unit, 100)
-UnitControl.itemTake(unit, Material.lead, 100)
-UnitControl.payDrop()
-UnitControl.payTake(10)
-UnitControl.mine(10, 20)
-UnitControl.flag(5)
-UnitControl.build(10, 20, Block.conveyor, 270, Material.lead)
-btype, unit = UnitControl.getBlock(10, 20)
-result = UnitControl.within(10, 20, 50)
+M.unit.stop()
+M.unit.move(10, 20)
+M.unit.approach(10, 20, 50)
+M.unit.boost(True)
+M.unit.pathfind()
+M.unit.target(10, 20, True)
+M.unit.targetp(unit, True)
+M.unit.itemDrop(unit, 100)
+M.unit.itemTake(unit, M.at.lead, 100)
+M.unit.payDrop()
+M.unit.payTake(10)
+M.unit.mine(10, 20)
+M.unit.flag(5)
+M.unit.build(10, 20, M.at.conveyor, 270, M.at.lead)
+btype, unit = M.unit.getBlock(10, 20)
+result = M.unit.within(10, 20, 50)
 --------------
 ucontrol stop 0 0 0 0 0
 ucontrol move 10 20 0 0 0

@@ -270,68 +270,129 @@ def _create_bin_op(token):
 _ZERO = mast.Literal(0)
 
 
+def build_attr_index(method_map):
+    patterns = {}
+    for name, method in method_map.items():
+        nm = tuple(1 if n == '1' else n for n in name.split('__'))
+        cur = patterns
+        for n in nm:
+            if n not in cur:
+                cur[n] = {}
+            cur = cur[n]
+        assert 'method' not in cur
+        cur['method'] = method
+
+    # from pprint import pprint
+    # pprint(patterns)
+
+    def resolve(nm):
+        pnames = []
+        cur = patterns
+        for n in nm:
+            if n in cur:
+                cur = cur[n]
+            elif 1 in cur:
+                pnames.append(n)
+                cur = cur[1]
+            else:
+                raise IndexError(f'Unresolvable name {".".join(nm)}')
+        if 'method' not in cur:
+            raise IndexError(f'Unresolvable name {".".join(nm)}')
+        return cur['method'], pnames
+
+    return resolve
+
+
+def no_at_const(n):
+    return mast.Name(n.name.lstrip('@'))
+
+
+def sort_dir_fn(n):
+    if not isinstance(n, mast.Name):
+        return n
+    elif n.name in ('@asc', 'asc'):
+        return mast.Literal(1)
+    elif n.name in ('@desc', 'desc'):
+        return mast.Literal(-1)
+    else:
+        return n
+
+
 class CallHandler(BaseExpressionHandler):
     AST_CLASS = ast.Call
 
     # TODO: support multiple values
-    func_min = _create_bin_op('min')
+    func__M__min = _create_bin_op('min')
     # TODO: support multiple values
-    func_max = _create_bin_op('max')
-    func_atan2 = _create_bin_op('atan2')
-    func_dst = _create_bin_op('dst')
-    func_noise = _create_bin_op('noise')
-    func_abs = _create_unary_op('abs')
-    func_log = _create_unary_op('log')
-    func_log10 = _create_unary_op('log10')
-    func_sin = _create_unary_op('sin')
-    func_cos = _create_unary_op('cos')
-    func_tan = _create_unary_op('tan')
-    func_floor = _create_unary_op('floor')
-    func_ceil = _create_unary_op('ceil')
-    func_sqrt = _create_unary_op('sqrt')
-    func_rand = _create_unary_op('rand')
+    func__M__max = _create_bin_op('max')
+    func__M__atan2 = _create_bin_op('atan2')
+    func__M__dst = _create_bin_op('dst')
+    func__M__noise = _create_bin_op('noise')
+    func__M__abs = _create_unary_op('abs')
+    func__M__log = _create_unary_op('log')
+    func__M__log10 = _create_unary_op('log10')
+    func__M__sin = _create_unary_op('sin')
+    func__M__cos = _create_unary_op('cos')
+    func__M__tan = _create_unary_op('tan')
+    func__M__floor = _create_unary_op('floor')
+    func__M__ceil = _create_unary_op('ceil')
+    func__M__sqrt = _create_unary_op('sqrt')
+    func__M__rand = _create_unary_op('rand')
 
-    def func_print(self, *args):
+    def func__M__print(self, *args):
         for arg in args:
             self.proc('print', arg)
 
-    def func_exit(self):
+    def func__1__printFlush(self, target):
+        self.proc('printflush', target)
+
+    def func__M__exit(self):
         self.proc('end')
 
-    def func_GetLink(self, index):
+    def func__M__linkCount(self):
+        self.resmap[0] = mast.Name()
+        self.proc('set', self.resmap[0], mast.Name('@links'))
+
+    def func__M__getLink(self, index):
         self.resmap[0] = mast.Name()
         self.proc('getlink', self.resmap[0], index)
 
-    def func_Radar(self, unit, target1, target2, target3, sort_type, sort_dir):
+    def func__1__radar(
+            self, unit, target1, target2, target3, sort_type, sort_dir):
         self.resmap[0] = mast.Name()
         self.proc(
-            'radar', target1, target2, target3,
-            sort_type, unit, sort_dir, self.resmap[0])
+            'radar',
+            no_at_const(target1), no_at_const(target2), no_at_const(target3),
+            no_at_const(sort_type), unit,
+            sort_dir_fn(sort_dir), self.resmap[0])
 
-    def func_Sensor(self, unit, prop):
+    def func__1__sensor(self, unit, prop):
         self.resmap[0] = mast.Name()
         self.proc('sensor', self.resmap[0], unit, prop)
 
-    def func_UnitBind(self, utype):
+    def func__M__unit__bind(self, utype):
         self.proc('ubind', utype)
 
-    def func_UnitRadar(self, target1, target2, target3, sort_type, sort_dir):
+    def func__M__unit__radar(
+            self, target1, target2, target3, sort_type, sort_dir):
         self.resmap[0] = mast.Name()
         self.proc(
-            'uradar', target1, target2, target3,
-            sort_type, mast.Name('turret1'), sort_dir, self.resmap[0])
+            'uradar',
+            no_at_const(target1), no_at_const(target2), no_at_const(target3),
+            no_at_const(sort_type), mast.Name('turret1'),
+            sort_dir_fn(sort_dir), self.resmap[0])
 
-    def func_LocateBuilding(self, block_type, enemy):
+    def func__M__locate__building(self, block_type, enemy):
         found = self.resmap[0] = mast.Name()
         x = self.resmap[1] = mast.Name()
         y = self.resmap[2] = mast.Name()
         building = self.resmap[3] = mast.Name()
         self.proc(
-            'ulocate building', block_type, enemy,
+            'ulocate building', no_at_const(block_type), enemy,
             mast.Name('@copper'),
             x, y, found, building)
 
-    def func_LocateOre(self, material):
+    def func__M__locate__ore(self, material):
         found = self.resmap[0] = mast.Name()
         x = self.resmap[1] = mast.Name()
         y = self.resmap[2] = mast.Name()
@@ -339,7 +400,7 @@ class CallHandler(BaseExpressionHandler):
             'ulocate ore', mast.Name('core'), mast.Literal(True),
             material, x, y, found, mast.Name())
 
-    def func_LocateSpawn(self):
+    def func__M__locate__spawn(self):
         found = self.resmap[0] = mast.Name()
         x = self.resmap[1] = mast.Name()
         y = self.resmap[2] = mast.Name()
@@ -348,7 +409,7 @@ class CallHandler(BaseExpressionHandler):
             'ulocate spawn', mast.Name('core'), mast.Literal(True),
             mast.Name('@copper'), x, y, found, building)
 
-    def func_LocateDamaged(self):
+    def func__M__locate__damaged(self):
         found = self.resmap[0] = mast.Name()
         x = self.resmap[1] = mast.Name()
         y = self.resmap[2] = mast.Name()
@@ -357,165 +418,141 @@ class CallHandler(BaseExpressionHandler):
             'ulocate damaged', mast.Name('core'), mast.Literal(True),
             mast.Name('@copper'), x, y, found, building)
 
-    def method_print_flush(self, target):
-        self.proc('printflush', target)
-
-    def method_Draw_clear(self, r, g, b):
+    def func__M__draw__clear(self, r, g, b):
         self.proc('draw clear', r, g, b)
 
-    def method_Draw_color(self, r, g, b, a):
+    def func__M__draw__color(self, r, g, b, a):
         self.proc('draw color', r, g, b, a)
 
-    def method_Draw_stroke(self, width):
+    def func__M__draw__stroke(self, width):
         self.proc('draw stroke', width)
 
-    def method_Draw_line(self, x, y, x2, y2):
+    def func__M__draw__line(self, x, y, x2, y2):
         self.proc('draw line', x, y, x2, y2)
 
-    def method_Draw_rect(self, x, y, width, height):
+    def func__M__draw__rect(self, x, y, width, height):
         self.proc('draw rect', x, y, width, height)
 
-    def method_Draw_lineRect(self, x, y, width, height):
+    def func__M__draw__lineRect(self, x, y, width, height):
         self.proc('draw lineRect', x, y, width, height)
 
-    def method_Draw_poly(self, x, y, sides, radius, rotation):
+    def func__M__draw__poly(self, x, y, sides, radius, rotation):
         self.proc('draw poly', x, y, sides, radius, rotation)
 
-    def method_Draw_linePoly(self, x, y, sides, radius, rotation):
+    def func__M__draw__linePoly(self, x, y, sides, radius, rotation):
         self.proc('draw linePoly', x, y, sides, radius, rotation)
 
-    def method_Draw_triangle(self, x, y, x2, y2, x3, y3):
+    def func__M__draw__triangle(self, x, y, x2, y2, x3, y3):
         self.proc('draw triangle', x, y, x2, y2, x3, y3)
 
-    def method_Draw_image(self, x, y, image, size, rotation):
+    def func__M__draw__image(self, x, y, image, size, rotation):
         self.proc('draw image', x, y, image, size, rotation)
 
-    def method_Draw_flush(self, target):
+    def func__1__drawFlush(self, target):
         self.proc('drawflush', target)
 
-    def method_Control_setEnabled(self, unit, is_enabled):
+    def func__1__setEnabled(self, unit, is_enabled):
         self.proc('control enabled', unit, is_enabled)
 
-    def method_Control_targetPosition(self, unit, x, y, shoot):
+    def func__1__targetPosition(self, unit, x, y, shoot):
         self.proc('control shoot', unit, x, y, shoot)
 
-    def method_Control_targetObject(self, unit, target, shoot):
+    def func__1__targetObject(self, unit, target, shoot):
         self.proc('control shootp', unit, target, shoot)
 
-    def method_Control_configure(self, unit, value):
+    def func__1__configure(self, unit, value):
         self.proc('control configure', unit, value)
 
-    def method_UnitControl_stop(self):
+    def func__M__unit__stop(self):
         self.proc('ucontrol stop', _ZERO, _ZERO, _ZERO, _ZERO, _ZERO)
 
-    def method_UnitControl_move(self, x, y):
+    def func__M__unit__move(self, x, y):
         self.proc('ucontrol move', x, y, _ZERO, _ZERO, _ZERO)
 
-    def method_UnitControl_approach(self, x, y, radius):
+    def func__M__unit__approach(self, x, y, radius):
         self.proc('ucontrol approach', x, y, radius, _ZERO, _ZERO)
 
-    def method_UnitControl_boost(self, value):
+    def func__M__unit__boost(self, value):
         self.proc('ucontrol boost', value, _ZERO, _ZERO, _ZERO, _ZERO)
 
-    def method_UnitControl_pathfind(self):
+    def func__M__unit__pathfind(self):
         self.proc('ucontrol pathfind', _ZERO, _ZERO, _ZERO, _ZERO, _ZERO)
 
-    def method_UnitControl_target(self, x, y, shoot):
+    def func__M__unit__target(self, x, y, shoot):
         self.proc('ucontrol target', x, y, shoot, _ZERO, _ZERO)
 
-    def method_UnitControl_targetp(self, unit, shoot):
+    def func__M__unit__targetp(self, unit, shoot):
         self.proc('ucontrol targetp', unit, shoot, _ZERO, _ZERO, _ZERO)
 
-    def method_UnitControl_itemDrop(self, unit, amount):
+    def func__M__unit__itemDrop(self, unit, amount):
         self.proc('ucontrol itemDrop', unit, amount, _ZERO, _ZERO, _ZERO)
 
-    def method_UnitControl_itemTake(self, unit, material, amount):
+    def func__M__unit__itemTake(self, unit, material, amount):
         self.proc('ucontrol itemTake', unit, material, amount, _ZERO, _ZERO)
 
-    def method_UnitControl_payDrop(self):
+    def func__M__unit__payDrop(self):
         self.proc('ucontrol payDrop', _ZERO, _ZERO, _ZERO, _ZERO, _ZERO)
 
-    def method_UnitControl_payTake(self, amount):
+    def func__M__unit__payTake(self, amount):
         self.proc('ucontrol payTake', amount, _ZERO, _ZERO, _ZERO, _ZERO)
 
-    def method_UnitControl_mine(self, x, y):
+    def func__M__unit__mine(self, x, y):
         self.proc('ucontrol mine', x, y, _ZERO, _ZERO, _ZERO)
 
-    def method_UnitControl_flag(self, value):
+    def func__M__unit__flag(self, value):
         self.proc('ucontrol flag', value, _ZERO, _ZERO, _ZERO, _ZERO)
 
-    def method_UnitControl_build(self, x, y, block, rotation, config):
+    def func__M__unit__build(self, x, y, block, rotation, config):
         self.proc('ucontrol build', x, y, block, rotation, config)
 
-    def method_UnitControl_getBlock(self, x, y):
+    def func__M__unit__getBlock(self, x, y):
         btype = self.resmap[0] = mast.Name()
         unit = self.resmap[1] = mast.Name()
         self.proc('ucontrol getBlock', x, y, btype, unit, _ZERO)
 
-    def method_UnitControl_within(self, x, y, radius):
+    def func__M__unit__within(self, x, y, radius):
         self.resmap[0] = mast.Name()
         self.proc('ucontrol within', x, y, radius, self.resmap[0], _ZERO)
 
-    def _get_object_method(self, expr):
-        if not isinstance(expr.value, ast.Name):
-            raise ValueError(
-                'Expressions are not allowed before attribute access, '
-                'use names of objects directly: Draw.clear(0, 0, 0)'
-            )
-        return f'{expr.value.id}_{expr.attr}'
+    _resolver = staticmethod(build_attr_index({
+        k[len('func__'):]: v
+        for k, v in vars().items()
+        if k.startswith('func__')
+    }))
 
-    def handle(self):
-        if isinstance(self.expr.func, ast.Attribute):
-            fname = self._get_object_method(self.expr.func)
-            method = getattr(self, 'method_' + fname, None)
-            if method is None:
-                raise ValueError(f'Unknown method name {fname}')
-        elif isinstance(self.expr.func, ast.Name):
-            fname = self.expr.func.id
-            method = getattr(self, 'func_' + fname, None)
-            if method is None:
-                raise ValueError(f'Unknown function name {fname}')
+    def resolve_func(self, value):
+        if isinstance(value, ast.Name):
+            return (value.id, )
+        elif isinstance(value, ast.Attribute):
+            return (*self.resolve_func(value.value), value.attr)
         else:
             raise ValueError(
                 'Expressions resulting in functions are not allowed, '
                 'only direct calls of named functions: func(1, 2, 3)'
             )
 
+    def handle(self):
+        nm = self.resolve_func(self.expr.func)
+        method, pre_args = self._resolver(nm)
+        pre_args = [mast.Name(n) for n in pre_args]
+
         if self.expr.keywords:
             raise ValueError('Keyword arguments are not supported')
 
         arg_vals = [self.run_trec_single(arg) for arg in self.expr.args]
-        method(*arg_vals)
-
-
-_method_values_permitted = 'Using {} methods as values is permitted'
+        method(self, *pre_args, *arg_vals)
 
 
 class AttributeHandler(BaseExpressionHandler):
     AST_CLASS = ast.Attribute
 
-    def obj_Material(self, attr):
+    def prop__M__at__1(self, attr):
         self.resmap[0] = mast.Name(f'@{attr.replace("_", "-")}')
 
-    def obj_Liquid(self, attr):
-        self.resmap[0] = mast.Name(f'@{attr.replace("_", "-")}')
-
-    def obj_Property(self, attr):
-        self.resmap[0] = mast.Name(f'@{attr.replace("_", "-")}')
-
-    def obj_UnitType(self, attr):
-        self.resmap[0] = mast.Name(f'@{attr.replace("_", "-")}')
-
-    def obj_BlockFlag(self, attr):
+    def prop__M__n__1(self, attr):
         self.resmap[0] = mast.Name(attr)
 
-    def obj_Block(self, attr):
-        self.resmap[0] = mast.Name(f'@{attr.replace("_", "-")}')
-
-    def obj_Target(self, attr):
-        self.resmap[0] = mast.Name(attr)
-
-    def obj_Sort(self, attr):
+    def prop__M__sort__1(self, attr):
         if attr == 'asc':
             self.resmap[0] = mast.Literal(1)
         elif attr == 'desc':
@@ -523,26 +560,39 @@ class AttributeHandler(BaseExpressionHandler):
         else:
             self.resmap[0] = mast.Name(attr)
 
-    def obj_Draw(self, attr):
-        raise ValueError(_method_values_permitted.format('Draw'))
+    def prop__1__1(self, unit, prop):
+        self.resmap[0] = mast.Name()
+        self.proc(
+            'sensor', self.resmap[0],
+            mast.Name(unit), mast.Name(f'@{prop.replace("_", "-")}'))
 
-    def obj_Control(self, attr):
-        raise ValueError(_method_values_permitted.format('Control'))
+    def prop__M__at__unit__1(self, prop):
+        self.resmap[0] = mast.Name()
+        self.proc(
+            'sensor', self.resmap[0],
+            mast.Name('@unit'), mast.Name(f'@{prop.replace("_", "-")}'))
 
-    def obj_Radar(self, attr):
-        raise ValueError(_method_values_permitted.format('Radar'))
+    _resolver = staticmethod(build_attr_index({
+        k[len('prop__'):]: v
+        for k, v in vars().items()
+        if k.startswith('prop__')
+    }))
 
-    def handle(self):
-        if not isinstance(self.expr.value, ast.Name):
+    def resolve_value(self, value):
+        if isinstance(value, ast.Name):
+            return [value.id]
+        elif isinstance(value, ast.Attribute):
+            return [*self.resolve_value(value.value), value.attr]
+        else:
             raise ValueError(
                 'Expressions are not allowed before attribute access, '
                 'use names of objects directly: Material.copper'
             )
-        obj_name = self.expr.value.id
-        method = getattr(self, 'obj_' + obj_name, None)
-        if method is None:
-            raise ValueError(f'Unknown object name {obj_name}')
-        return method(self.expr.attr)
+
+    def handle(self):
+        nm = self.resolve_value(self.expr)
+        method, pre_args = self._resolver(nm)
+        method(self, *pre_args)
 
 
 # Statements ===================================
@@ -676,6 +726,13 @@ class WhileStatementHandler(BaseExpressionHandler):
 
         self.jump(loop_label, 'always')
         self.pre.append(end_label)
+
+
+class ImportFromHandler(BaseExpressionHandler):
+    AST_CLASS = ast.ImportFrom
+
+    def handle(self):
+        pass  # intentionally do nothing
 
 
 AST_NODE_MAP = {
