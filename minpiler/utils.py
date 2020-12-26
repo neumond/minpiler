@@ -5,32 +5,6 @@ from . import mast
 
 
 @dataclass
-class DictStack:
-    _stack: List[dict] = field(default_factory=list)
-
-    def push_layer(self):
-        self._stack.append({})
-
-    def pop_layer(self):
-        self._stack.pop()
-
-    def __getitem__(self, key):
-        for layer in reversed(self._stack):
-            if key in layer:
-                return layer[key]
-        raise KeyError
-
-    def __setitem__(self, key, value):
-        self._stack[-1][key] = value
-
-    def __contains__(self, key):
-        for layer in reversed(self._stack):
-            if key in layer:
-                return True
-        return False
-
-
-@dataclass
 class FuncDef:
     name: str
     n_args: int

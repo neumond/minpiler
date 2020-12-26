@@ -543,8 +543,6 @@ class CallHandler(BaseExpressionHandler):
 
         for fa, sa in zip(fdef.args, args):
             self.proc('set', fa, sa)
-        for rv in fdef.resmap.values():
-            self.proc('set', rv, mast.Literal(None))
 
         self.proc(
             'op add', fdef.return_addr, mast.Name('@counter'), mast.Literal(1))
@@ -769,10 +767,6 @@ class FunctionDefStatementHandler(BaseExpressionHandler):
     AST_CLASS = ast.FunctionDef
 
     def handle(self):
-        # self.dev_dump()
-        # print('name', self.expr.name)
-        # print('body', self.expr.body)
-        # print('args', self.expr.args.args)
         assert self.expr.args.posonlyargs == []
         assert self.expr.args.vararg is None
         assert self.expr.args.kwonlyargs == []
@@ -787,8 +781,10 @@ class FunctionDefStatementHandler(BaseExpressionHandler):
         self.scope[self.expr.name] = fdef
 
         end_label = mast.Label()
-        self.jump(end_label, 'always')
+        self.jump(end_label, 'always')  # skip function body
         self.pre.append(fdef.start_label)
+
+        before, self.pre = self.pre, []
 
         with self.sub_scope():
             self.scope._current_func = fdef
@@ -802,20 +798,12 @@ class FunctionDefStatementHandler(BaseExpressionHandler):
 
         self.pre.append(end_label)
 
-        # FunctionDef(
-        #     name='posvel',
-        #     args=arguments(
-        #         posonlyargs=[],
-        #         args=[
-        #             arg(arg='pos', annotation=None, type_comment=None),
-        #             arg(arg='vel', annotation=None, type_comment=None)
-        #         ],
-        #         vararg=None,
-        #         kwonlyargs=[],
-        #         kw_defaults=[],
-        #         kwarg=None,
-        #         defaults=[]
-        #     ),
+        # we have to do this here, since we need to know
+        # max size of return tuple
+        body, self.pre = self.pre, before
+        for rv in fdef.resmap.values():
+            self.proc('set', rv, mast.Literal(None))
+        self.pre.extend(body)
 
 
 class ReturnHandler(BaseExpressionHandler):
