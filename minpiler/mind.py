@@ -767,7 +767,9 @@ class FunctionDefStatementHandler(BaseExpressionHandler):
     AST_CLASS = ast.FunctionDef
 
     def handle(self):
-        assert self.expr.args.posonlyargs == []
+        if _PY >= (3, 8):
+            assert self.expr.args.posonlyargs == []
+            assert self.expr.type_comment is None
         assert self.expr.args.vararg is None
         assert self.expr.args.kwonlyargs == []
         assert self.expr.args.kw_defaults == []
@@ -775,7 +777,6 @@ class FunctionDefStatementHandler(BaseExpressionHandler):
         assert self.expr.args.defaults == []
         assert self.expr.decorator_list == []
         assert self.expr.returns is None
-        assert self.expr.type_comment is None
 
         fdef = utils.FuncDef(self.expr.name, len(self.expr.args.args))
         self.scope[self.expr.name] = fdef
