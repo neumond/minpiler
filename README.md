@@ -1,19 +1,22 @@
 # Minpiler
 
 Allows easier control over Mindustry microprocessors.
-You can write subset of Python instead assembler-like Mindustry instructions.
+You can write _subset_ of Python instead assembler-like Mindustry instructions.
+Consider this as effort to reuse Python syntax, rather than Python implementation.
 
 **Warning**: Everything that requires dynamic memory doesn't work:
-any data structure (list, dict, etc), classes, functions, closures,
-recursion. Additionally you can't use imports or any Python builtins
-(input, eval, Exception, etc). Explanation below.
+any data structure (list, dict, etc), classes, closures,
+recursion. Additionally you can't use any Python builtins
+(input, eval, Exception, etc). Imports do nothing, use it make flake8 happy.
+Explanation below.
 
 ## Rationale
 
 Mindustry microprocessors are quite nice and easy to understand.
 They have explicit limit of instructions per unit of time.
-They can operate on integers, floats, use constant strings and fire
-several commands that affect the game.
+They can operate on floats, refer to _objects_
+(null, constant strings, @-objects, in-game units)
+and fire several commands that affect the game.
 
 Here is an example program that switches unloader output
 between lead and titanium depending on time:
@@ -60,10 +63,7 @@ time += 1
 if time >= 300:
     time = 0
 cell1[0] = time
-if time > 200:
-    Control.configure(unloader1, Material.lead)
-else:
-    Control.configure(unloader1, Material.titanium)
+unloader1.configure(M.at.lead if time > 200 else M.at.titanium)
 ```
 
 ```python
@@ -84,36 +84,30 @@ Mindustry controllers, but unfortunately I have to stop you there.
 You won't be able to use most of the Python. All the restrictions
 arise from Mindustry processor architecture:
 
-1. There's no data structures, only scalar values are allowed. The only exception are Memory cells that behave somewhat like dicts.
+1. There's no data structures, only scalar values are allowed (floats or opaque _objects_). The only exception are Memory cells that behave as fixed-size arrays of floats.
 2. You can't access variables indirectly, there're no pointers, no `getattr`.
 3. Subsequence of former, it's impossible to implement dynamic memory/stack (at least without Memory cells). This makes lists, iterators, classes, closures and other things impossible.
-4. Jumps can target only fixed locations, there's no indirection using variables. This makes function call stack implementation nearly impossible, you can't return to arbitrary address.
-5. Set of builtins is very restricted, you can only call what you have available in game (print, printflush, draw, etc)
+4. Set of builtins is very restricted, you can only call what you have available in game (M.print, M.draw.clear, etc)
 
 Anyway, I hope Minpiler will be handy enough for you to have lots of fun playing Mindustry.
 
 ## How to use
 
 ```sh
-pip install minpiler
+# Install packages
+pip install minpiler pyperclip
+
+# Compile your code into clipboard
+python -m minpiler --clip yourfile.py
+# now open processor building, press Edit button, Import from Clipboard
 ```
 
-On Linux systems you can write your code in .py files, then run
+Pyperclip is optional, it's only used with `--clip` option.
 
-```sh
-python -m minpiler yourfile.py | xclip -selection clipboard
-```
-
-then, open processor building, press Edit button, Import from Clipboard.
-
-It's possible to read source from stdin:
-
-```sh
-cat yourfile.py | python -m minpiler -
-```
+Refer to set of code [samples](samples/) in this repository.
 
 ## Compatibility
 
-Currently, only Python 3.8 and Mindustry 121 have been tested.
+Python >= 3.6 or compatible pypy3.
 
-Some features and autotests are under developement.
+Mindustry: currently only 121 have been tested.
