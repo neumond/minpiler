@@ -127,11 +127,22 @@ a = 4
 def fn(a):
     a = 6
     a += 1
+    M.print(a, "\\n")
 
 fn(3)
 M.print(a)
 --------------
+7
 4
+==============
+def balance(container):
+    M.print("Object ", container, "\\n")
+    M.print("Lead ", container.lead)
+
+balance(container1)
+--------------
+Object container
+Lead 300
 ==============
 """
 
@@ -142,6 +153,7 @@ def test_programs(code, result):
     ast = mparse.parse(cmdline.py_to_mind(code))
     assert emu.execute(ast, {
         'cell1': {},
+        'container1': {'@lead': 300, '__str__': 'container'},
     }) == result
 
 

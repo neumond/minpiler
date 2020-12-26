@@ -59,7 +59,7 @@ def _parse_cmd(cmd, *args):
             [_name_or_literal(a) for a in args[1:]],
             mast.Name(args[0]),
         )
-    elif cmd in ('print', 'printflush', 'end', 'write'):
+    elif cmd in ('print', 'printflush', 'end', 'write', 'sensor'):
         return mast.ProcedureCall(
             cmd,
             [_name_or_literal(a) for a in args],

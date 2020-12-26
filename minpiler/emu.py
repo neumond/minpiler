@@ -10,6 +10,9 @@ class Var:
     def __init__(self, val):
         self.value = val
 
+    def __repr__(self):
+        return f'<Var {repr(self.value)}>'
+
     @property
     def is_object(self) -> bool:
         v = self.value
@@ -48,7 +51,7 @@ class Var:
         elif isinstance(v, float):
             return str(v).rstrip('0').rstrip('.')
         elif isinstance(v, dict):
-            return 'cell'
+            return v.get('__str__', 'cell')
         elif isinstance(v, str):
             return v.replace(r'\n', '\n')
         else:
@@ -148,7 +151,7 @@ def execute_fn_call(ins, fn, args):
         return 0.0
 
 
-def execute_proc_call(ins, args, buf):
+def execute_proc_call(ins, args, raw_args, buf, state):
     if ins.op == 'print':
         buf.print(args[0].printable)
     elif ins.op == 'printflush':
@@ -158,6 +161,11 @@ def execute_proc_call(ins, args, buf):
         cell = args[1].value
         index = args[2].num_value
         cell[index] = value
+    elif ins.op == 'sensor':
+        if not args[1].is_object or args[1].value is None:
+            state.pop(raw_args[0].name, None)
+        else:
+            state[raw_args[0].name] = args[1].value.get(raw_args[2].name)
     else:
         raise ValueError('Unknown procedure')
 
@@ -199,7 +207,9 @@ def execute(instructions, state: dict, max_steps=5000):
                 execute_proc_call(
                     ins,
                     list(map(_eval_arg, ins.args)),
+                    ins.args,
                     buf,
+                    state,
                 )
         elif isinstance(ins, mast.Jump):
             apply = False

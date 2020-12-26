@@ -599,7 +599,7 @@ class AttributeHandler(BaseExpressionHandler):
         self.resmap[0] = mast.Name()
         self.proc(
             'sensor', self.resmap[0],
-            mast.Name(unit), mast.Name(f'@{prop.replace("_", "-")}'))
+            unit, mast.Name(f'@{prop.replace("_", "-")}'))
 
     def prop__M__unit__1(self, prop):
         self.prop__1__1('@unit', prop)
@@ -627,7 +627,9 @@ class AttributeHandler(BaseExpressionHandler):
     def handle(self):
         nm = self.resolve_value(self.expr)
         method, pre_args = self._resolver(nm)
-        method(self, *(nm.name for nm in pre_args))
+        if method.__name__.endswith('__1'):
+            pre_args[-1] = pre_args[-1].name
+        method(self, *pre_args)
 
 
 # Statements ===================================
