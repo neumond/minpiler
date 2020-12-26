@@ -1,9 +1,10 @@
 import ast
 import sys
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
-from . import mast
+from . import mast, utils
 
 
 _PY = (sys.version_info.major, sys.version_info.minor)
@@ -105,6 +106,7 @@ def get_type_map(map, item, desc):
 class BaseExpressionHandler:
     expr: Any
     trec: Callable = field(repr=False)
+    scope: utils.Scope = field(repr=False)
     pre: list = field(default_factory=list)
     resmap: dict = field(default_factory=dict)
 
@@ -117,7 +119,7 @@ class BaseExpressionHandler:
         return [self.resmap[i] for i in range(len(self.resmap))]
 
     def run_trec(self, expr):
-        retvals, pre = self.trec(expr)
+        retvals, pre = self.trec(expr, self.scope)
         self.pre.extend(pre)
         return retvals
 
@@ -132,6 +134,14 @@ class BaseExpressionHandler:
 
     def jump(self, label, op, *args):
         self.pre.append(mast.Jump(label, op, args))
+
+    @contextmanager
+    def sub_scope(self):
+        self.scope = utils.Scope(self.scope)
+        try:
+            yield
+        finally:
+            self.scope = self.scope._parent_scope
 
     def handle(self):
         raise NotImplementedError
@@ -148,9 +158,20 @@ class NameHandler(BaseExpressionHandler):
     AST_CLASS = ast.Name
 
     def handle(self):
+        if self.expr.id in self.scope:
+            self.resmap[0] = self.scope[self.expr.id]
+            return
         if self.expr.id in RESERVED_NAMES:
             raise ValueError(f'The name {self.expr.id} is reserved')
         self.resmap[0] = mast.Name(self.expr.id)
+
+
+class TupleHandler(BaseExpressionHandler):
+    AST_CLASS = ast.Tuple
+
+    def handle(self):
+        for index, value in enumerate(self.expr.elts):
+            self.resmap[index] = self.run_trec_single(value)
 
 
 class SubscriptHandler(BaseExpressionHandler):
@@ -282,15 +303,12 @@ def build_attr_index(method_map):
         assert 'method' not in cur
         cur['method'] = method
 
-    # from pprint import pprint
-    # pprint(patterns)
-
     def resolve(nm):
         pnames = []
         cur = patterns
         for n in nm:
-            if n in cur:
-                cur = cur[n]
+            if n.name is not None and n.name in cur:
+                cur = cur[n.name]
             elif 1 in cur:
                 pnames.append(n)
                 cur = cur[1]
@@ -514,6 +532,26 @@ class CallHandler(BaseExpressionHandler):
         self.resmap[0] = mast.Name()
         self.proc('ucontrol within', x, y, radius, self.resmap[0], _ZERO)
 
+    def func__1(self, fname, *args):
+        fname = fname.name
+        if fname not in self.scope:
+            raise NameError(f'Undefined function {fname}')
+        fdef = self.scope[fname]
+        assert isinstance(fdef, utils.FuncDef)
+        if len(args) < fdef.n_args:
+            raise TypeError(f'Insufficient arguments for function {fname}')
+
+        for fa, sa in zip(fdef.args, args):
+            self.proc('set', fa, sa)
+        for rv in fdef.resmap.values():
+            self.proc('set', rv, mast.Literal(None))
+
+        self.proc(
+            'op add', fdef.return_addr, mast.Name('@counter'), mast.Literal(1))
+        self.jump(fdef.start_label, 'always')
+        for k, v in fdef.resmap.items():
+            self.resmap[k] = v
+
     _resolver = staticmethod(build_attr_index({
         k[len('func__'):]: v
         for k, v in vars().items()
@@ -522,9 +560,9 @@ class CallHandler(BaseExpressionHandler):
 
     def resolve_func(self, value):
         if isinstance(value, ast.Name):
-            return (value.id, )
+            return [self.run_trec_single(value)]
         elif isinstance(value, ast.Attribute):
-            return (*self.resolve_func(value.value), value.attr)
+            return [*self.resolve_func(value.value), mast.Name(value.attr)]
         else:
             raise ValueError(
                 'Expressions resulting in functions are not allowed, '
@@ -534,7 +572,6 @@ class CallHandler(BaseExpressionHandler):
     def handle(self):
         nm = self.resolve_func(self.expr.func)
         method, pre_args = self._resolver(nm)
-        pre_args = [mast.Name(n) for n in pre_args]
 
         if self.expr.keywords:
             raise ValueError('Keyword arguments are not supported')
@@ -580,9 +617,9 @@ class AttributeHandler(BaseExpressionHandler):
 
     def resolve_value(self, value):
         if isinstance(value, ast.Name):
-            return [value.id]
+            return [self.run_trec_single(value)]
         elif isinstance(value, ast.Attribute):
-            return [*self.resolve_value(value.value), value.attr]
+            return [*self.resolve_value(value.value), mast.Name(value.attr)]
         else:
             raise ValueError(
                 'Expressions are not allowed before attribute access, '
@@ -592,7 +629,7 @@ class AttributeHandler(BaseExpressionHandler):
     def handle(self):
         nm = self.resolve_value(self.expr)
         method, pre_args = self._resolver(nm)
-        method(self, *pre_args)
+        method(self, *(nm.name for nm in pre_args))
 
 
 # Statements ===================================
@@ -616,18 +653,18 @@ class AssignStatementHandler(BaseExpressionHandler):
     def _assign(self, targets, values):
         assert len(targets) <= len(values)
         for target, value in zip(targets, values):
+            target = self.run_trec_single(target)
             self.proc('set', target, value)
 
     def named_assign(self, target, value):
         _check_assignment_to_reserved(target.id)
         retvals = self.run_trec(value)
-        self._assign([mast.Name(target.id)], retvals)
+        self._assign([target], retvals)
 
     def tuple_assign(self, target, value):
         assert all(isinstance(n, ast.Name) for n in target.elts)
-        tnames = [mast.Name(name.id) for name in target.elts]
         retvals = self.run_trec(value)
-        self._assign(tnames, retvals)
+        self._assign(target.elts, retvals)
 
     def memory_assign(self, target, value):
         if not isinstance(target.value, ast.Name):
@@ -659,7 +696,7 @@ class AugAssignStatementHandler(BaseExpressionHandler):
 
     def named_assign(self, target, op, operand):
         operand_val = self.run_trec_single(operand)
-        t = mast.Name(target.id)
+        t = self.run_trec_single(target)
         self.proc(f'op {op}', t, t, operand_val)
 
     def memory_assign(self, target, op, operand):
@@ -668,7 +705,7 @@ class AugAssignStatementHandler(BaseExpressionHandler):
         index_val = self.run_trec_single(_get_ast_slice(target))
         operand_val = self.run_trec_single(operand)
         op_output = mast.Name()
-        cell = mast.Name(target.value.id)
+        cell = self.run_trec_single(target.value)
         self.proc('read', op_output, cell, index_val)
         self.proc(f'op {op}', op_output, op_output, operand_val)
         self.proc('write', op_output, cell, index_val)
@@ -728,6 +765,76 @@ class WhileStatementHandler(BaseExpressionHandler):
         self.pre.append(end_label)
 
 
+class FunctionDefStatementHandler(BaseExpressionHandler):
+    AST_CLASS = ast.FunctionDef
+
+    def handle(self):
+        # self.dev_dump()
+        # print('name', self.expr.name)
+        # print('body', self.expr.body)
+        # print('args', self.expr.args.args)
+        assert self.expr.args.posonlyargs == []
+        assert self.expr.args.vararg is None
+        assert self.expr.args.kwonlyargs == []
+        assert self.expr.args.kw_defaults == []
+        assert self.expr.args.kwarg is None
+        assert self.expr.args.defaults == []
+        assert self.expr.decorator_list == []
+        assert self.expr.returns is None
+        assert self.expr.type_comment is None
+
+        fdef = utils.FuncDef(self.expr.name, len(self.expr.args.args))
+        self.scope[self.expr.name] = fdef
+
+        end_label = mast.Label()
+        self.jump(end_label, 'always')
+        self.pre.append(fdef.start_label)
+
+        with self.sub_scope():
+            self.scope._current_func = fdef
+            for a, n in zip(self.expr.args.args, fdef.args):
+                self.scope[a.arg] = n
+
+            for stmt in self.expr.body:
+                self.run_trec(stmt)
+
+            fdef.create_return(self)
+
+        self.pre.append(end_label)
+
+        # FunctionDef(
+        #     name='posvel',
+        #     args=arguments(
+        #         posonlyargs=[],
+        #         args=[
+        #             arg(arg='pos', annotation=None, type_comment=None),
+        #             arg(arg='vel', annotation=None, type_comment=None)
+        #         ],
+        #         vararg=None,
+        #         kwonlyargs=[],
+        #         kw_defaults=[],
+        #         kwarg=None,
+        #         defaults=[]
+        #     ),
+
+
+class ReturnHandler(BaseExpressionHandler):
+    AST_CLASS = ast.Return
+
+    def handle(self):
+        fdef = self.scope.current_func
+        if fdef is None:
+            raise ValueError('Returning outside function context')
+
+        for index, value in enumerate(self.run_trec(self.expr.value)):
+            self.resmap[index] = value
+            if index not in fdef.resmap:
+                fdef.resmap[index] = mast.Name()
+            self.proc('set', fdef.resmap[index], value)
+
+        fdef.create_return(self)
+
+
 class ImportFromHandler(BaseExpressionHandler):
     AST_CLASS = ast.ImportFrom
 
@@ -754,13 +861,8 @@ if _PY < (3, 8):
     _create_ast_constant_hack(ast.Ellipsis, lambda expr: ...)
 
 
-def transform_expr(expr):
-    def trec(expr):
-        return transform_expr(expr)
-
-    if type(expr) not in AST_NODE_MAP:
-        raise ValueError(f'Unsupported expression {expr}')
-
-    node = AST_NODE_MAP[type(expr)](expr, trec)
+def transform_expr(expr, scope):
+    htype = get_type_map(AST_NODE_MAP, expr, 'expression')
+    node = htype(expr, transform_expr, scope)
     node.handle()
     return node.get_results(), node.pre

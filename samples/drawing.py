@@ -11,6 +11,18 @@ M.draw.clear(0, 0, 0)
 M.draw.stroke(5)
 M.draw.color(255, 0, 0, 255)
 
+
+def posvel(pos, vel):
+    pos += vel
+    if pos < 0:
+        pos = 0
+        vel = M.abs(vel)
+    if pos > dsize:
+        pos = dsize
+        vel = -M.abs(vel)
+    return pos, vel
+
+
 if setup is None or switch1.enabled:
     t1x = M.rand(dsize)
     t1y = M.rand(dsize)
@@ -27,89 +39,12 @@ if setup is None or switch1.enabled:
     t3vy = M.rand(variation * 2) - variation
     setup = True
 else:
-    pos = t1x
-    vel = t1vx
-
-    pos += vel
-    if pos < 0:
-        pos = 0
-        vel = M.abs(vel)
-    if pos > dsize:
-        pos = dsize
-        vel = -M.abs(vel)
-
-    t1x = pos
-    t1vx = vel
-
-    pos = t2x
-    vel = t2vx
-
-    pos += vel
-    if pos < 0:
-        pos = 0
-        vel = M.abs(vel)
-    if pos > dsize:
-        pos = dsize
-        vel = -M.abs(vel)
-
-    t2x = pos
-    t2vx = vel
-
-    pos = t3x
-    vel = t3vx
-
-    pos += vel
-    if pos < 0:
-        pos = 0
-        vel = M.abs(vel)
-    if pos > dsize:
-        pos = dsize
-        vel = -M.abs(vel)
-
-    t3x = pos
-    t3vx = vel
-
-    pos = t1y
-    vel = t1vy
-
-    pos += vel
-    if pos < 0:
-        pos = 0
-        vel = M.abs(vel)
-    if pos > dsize:
-        pos = dsize
-        vel = -M.abs(vel)
-
-    t1y = pos
-    t1vy = vel
-
-    pos = t2y
-    vel = t2vy
-
-    pos += vel
-    if pos < 0:
-        pos = 0
-        vel = M.abs(vel)
-    if pos > dsize:
-        pos = dsize
-        vel = -M.abs(vel)
-
-    t2y = pos
-    t2vy = vel
-
-    pos = t3y
-    vel = t3vy
-
-    pos += vel
-    if pos < 0:
-        pos = 0
-        vel = M.abs(vel)
-    if pos > dsize:
-        pos = dsize
-        vel = -M.abs(vel)
-
-    t3y = pos
-    t3vy = vel
+    t1x, t1vx = posvel(t1x, t1vx)
+    t1y, t1vy = posvel(t1y, t1vy)
+    t2x, t2vx = posvel(t2x, t2vx)
+    t2y, t2vy = posvel(t2y, t2vy)
+    t3x, t3vx = posvel(t3x, t3vx)
+    t3y, t3vy = posvel(t3y, t3vy)
 
 
 M.draw.line(t1x, t1y, t2x, t2y)

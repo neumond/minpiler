@@ -175,16 +175,17 @@ def create_arg_evaluator(state):
 
 
 def execute(instructions, state: dict, max_steps=5000):
+    state = state.copy()
     _eval_arg = create_arg_evaluator(state)
 
     inst_map = INST_MAP.copy()
 
-    ptr = 0
+    state['@counter'] = 0
     buf = OutputBuffer()
 
     for _ in range(max_steps):
-        ins = instructions[ptr]
-        ptr += 1
+        ins = instructions[int(state['@counter'])]
+        state['@counter'] = int(state['@counter']) + 1
         if isinstance(ins, mast.FunctionCall):
             state[ins.result.name] = execute_fn_call(
                 ins,
@@ -210,10 +211,10 @@ def execute(instructions, state: dict, max_steps=5000):
             else:
                 raise ValueError('Unknown jump condition')
             if apply:
-                ptr = ins.label
+                state['@counter'] = ins.label
         else:
             raise ValueError('Unknown instruction')
-        if ptr >= len(instructions):
+        if state['@counter'] >= len(instructions):
             break
     else:
         raise OverflowError('Too many steps have been taken')
