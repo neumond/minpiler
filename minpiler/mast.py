@@ -63,15 +63,6 @@ class Jump:
 Instruction = Union[ProcedureCall, FunctionCall, Label, Jump]
 
 
-def remove_unnecessary_jumps(instructions):
-    remove = set()
-    for index, (a, b) in enumerate(zip(instructions, instructions[1:])):
-        if isinstance(a, Jump) and isinstance(b, Label):
-            if a.label is b:
-                remove.add(index)
-    return [ins for i, ins in enumerate(instructions) if i not in remove]
-
-
 def filter_and_index_labels(instructions):
     labels = {}
     program = []
@@ -122,7 +113,6 @@ def create_dump_session(resolve_jump):
 
 
 def dump(instructions):
-    instructions = remove_unnecessary_jumps(instructions)
     instructions, labels = filter_and_index_labels(instructions)
 
     max_jump = -1

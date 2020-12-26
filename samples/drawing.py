@@ -23,20 +23,18 @@ def posvel(pos, vel):
     return pos, vel
 
 
-if setup is None or switch1.enabled:
-    t1x = M.rand(dsize)
-    t1y = M.rand(dsize)
-    t2x = M.rand(dsize)
-    t2y = M.rand(dsize)
-    t3x = M.rand(dsize)
-    t3y = M.rand(dsize)
+def randvel():
     variation = 10
-    t1vx = M.rand(variation * 2) - variation
-    t1vy = M.rand(variation * 2) - variation
-    t2vx = M.rand(variation * 2) - variation
-    t2vy = M.rand(variation * 2) - variation
-    t3vx = M.rand(variation * 2) - variation
-    t3vy = M.rand(variation * 2) - variation
+    return M.rand(variation * 2) - variation
+
+
+if setup is None or switch1.enabled:
+    t1x, t1y = M.rand(dsize), M.rand(dsize)
+    t2x, t2y = M.rand(dsize), M.rand(dsize)
+    t3x, t3y = M.rand(dsize), M.rand(dsize)
+    t1vx, t1vy = randvel(), randvel()
+    t2vx, t2vy = randvel(), randvel()
+    t3vx, t3vy = randvel(), randvel()
     setup = True
 else:
     t1x, t1vx = posvel(t1x, t1vx)

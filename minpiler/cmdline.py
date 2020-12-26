@@ -2,7 +2,7 @@ import argparse
 import ast
 import sys
 
-from . import mind, mast, utils
+from . import mind, mast, utils, optimizer
 
 
 parser = argparse.ArgumentParser()
@@ -18,6 +18,7 @@ def py_to_mind(code):
     for stmt in ast.parse(code).body:
         _, lines = mind.transform_expr(stmt, global_scope)
         program.extend(lines)
+    program = optimizer.optimize(program)
     return '\n'.join(mast.dump(program)) + '\n'
 
 
