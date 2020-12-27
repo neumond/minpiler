@@ -1,0 +1,31 @@
+[build-system]
+requires = ["flit_core >=2,<4"]
+build-backend = "flit_core.buildapi"
+
+[tool.flit.metadata]
+module = "minpiler"
+author = "Vitalik Verhovodov"
+author-email = "knifeslaughter@gmail.com"
+home-page = "https://github.com/neumond/minpiler"
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "License :: OSI Approved :: MIT License",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Education",
+    "Programming Language :: Python :: 3.6",
+    "Programming Language :: Python :: 3.7",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Topic :: Games/Entertainment",
+    "Topic :: Software Development :: Compilers",
+    "Topic :: Utilities",
+]
+description-file = "README.md"
+requires-python = ">=3.6"
+requires = [
+    "dataclasses; python_version <= '3.6'",
+]
+keywords = "mindustry,mlog,mlogic,compiler,processor"
+
+[tool.flit.scripts]
+minpiler = "minpiler.cmdline:run"
