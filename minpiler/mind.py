@@ -817,11 +817,12 @@ class ReturnHandler(BaseExpressionHandler):
         if fdef is None:
             raise ValueError('Returning outside function context')
 
-        for index, value in enumerate(self.run_trec(self.expr.value)):
-            self.resmap[index] = value
-            if index not in fdef.resmap:
-                fdef.resmap[index] = mast.Name()
-            self.proc('set', fdef.resmap[index], value)
+        if self.expr.value is not None:
+            for index, value in enumerate(self.run_trec(self.expr.value)):
+                self.resmap[index] = value
+                if index not in fdef.resmap:
+                    fdef.resmap[index] = mast.Name()
+                self.proc('set', fdef.resmap[index], value)
 
         fdef.create_return(self)
 
