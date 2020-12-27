@@ -7,7 +7,7 @@ longdesc = (Path(__file__).parent / 'README.md').read_text()
 
 setup(
     name='minpiler',
-    version='0.3.0',
+    version='0.3.1',
     description='Compile python code to Mindustry microprocessor instructions',
     long_description=longdesc,
     long_description_content_type='text/markdown',
