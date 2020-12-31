@@ -1,4 +1,4 @@
-from void import (
+from minpiler.typeshed import (
     M,
     unloader1, unloader2, unloader3, unloader4, unloader5, unloader6,
     container1, container2, container3, container4, container5, container6,

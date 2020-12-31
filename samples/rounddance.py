@@ -1,7 +1,11 @@
-from void import (
+from minpiler.typeshed import (
     M,
     time, allocated_flags,
 )
+
+
+time: float
+allocated_flags: float
 
 
 time += 0.5

@@ -1,4 +1,4 @@
-from void import (
+from minpiler.typeshed import (
     M,
     message1, sorter1, vault1, container1,
     last_ore,

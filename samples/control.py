@@ -1,4 +1,4 @@
-from void import (
+from minpiler.typeshed import (
     M,
     scatter1, sorter1, switch1, switch2,
     time,

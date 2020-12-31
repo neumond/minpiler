@@ -86,7 +86,7 @@ def create_dump_session(resolve_jump):
             if arg.name is None:
                 arg.name = f'_r{next(c)}'
             return arg.name
-        raise ValueError
+        raise ValueError(f'Bad argument value {arg!r}')
 
     def dump_instruction(ins: Instruction):
         if isinstance(ins, ProcedureCall):

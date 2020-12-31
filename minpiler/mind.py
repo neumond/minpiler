@@ -584,17 +584,6 @@ class AttributeHandler(BaseExpressionHandler):
     def prop__M__at__1(self, attr):
         self.resmap[0] = mast.Name(f'@{attr.replace("_", "-")}')
 
-    def prop__M__n__1(self, attr):
-        self.resmap[0] = mast.Name(attr)
-
-    def prop__M__sort__1(self, attr):
-        if attr == 'asc':
-            self.resmap[0] = mast.Literal(1)
-        elif attr == 'desc':
-            self.resmap[0] = mast.Literal(-1)
-        else:
-            self.resmap[0] = mast.Name(attr)
-
     def prop__1__1(self, unit, prop):
         self.resmap[0] = mast.Name()
         self.proc(
@@ -602,7 +591,7 @@ class AttributeHandler(BaseExpressionHandler):
             unit, mast.Name(f'@{prop.replace("_", "-")}'))
 
     def prop__M__unit__1(self, prop):
-        self.prop__1__1('@unit', prop)
+        self.prop__1__1(mast.Name('@unit'), prop)
 
     def prop__M__at__unit__1(self, prop):
         self.prop__M__unit__1(prop)
@@ -722,6 +711,14 @@ class AugAssignStatementHandler(BaseExpressionHandler):
         method = self.TARGET_MAP[type(target)]
         op = get_type_map(BIN_OP_MAP, self.expr.op, 'BinOp')
         method(self, target, op, self.expr.value)
+
+
+class AnnAssignStatementHandler(BaseExpressionHandler):
+    AST_CLASS = ast.AnnAssign
+
+    def handle(self):
+        if self.expr.value is not None:
+            raise ValueError('Assignments near annotations are not supported')
 
 
 class IfStatementHandler(BaseExpressionHandler):

@@ -1,7 +1,12 @@
-from void import (
-    M,
+from minpiler.typeshed import (
+    M, MObject,
     unloader1, unloader2, unloader3,
 )
+
+
+unloader1: MObject
+unloader2: MObject
+unloader3: MObject
 
 
 # loads 1 plastanium conveyor using 3 unloaders

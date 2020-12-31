@@ -1,4 +1,4 @@
-from void import (
+from minpiler.typeshed import (
     M,
     duo1,
     leader,
