@@ -705,12 +705,10 @@ class AugAssignStatementHandler(BaseExpressionHandler):
     }
 
     def handle(self):
-        target = self.expr.target
-        if type(target) not in self.TARGET_MAP:
-            raise ValueError(f'Unsupported assignment target {target}')
-        method = self.TARGET_MAP[type(target)]
+        method = get_type_map(
+            self.TARGET_MAP, self.expr.target, 'assignment target')
         op = get_type_map(BIN_OP_MAP, self.expr.op, 'BinOp')
-        method(self, target, op, self.expr.value)
+        method(self, self.expr.target, op, self.expr.value)
 
 
 class AnnAssignStatementHandler(BaseExpressionHandler):
@@ -759,6 +757,102 @@ class WhileStatementHandler(BaseExpressionHandler):
             self.run_trec(stmt)
 
         self.jump(loop_label, 'always')
+        self.pre.append(end_label)
+
+
+class ForStatementHandler(BaseExpressionHandler):
+    AST_CLASS = ast.For
+
+    def target_name(self, target):
+        return self.run_trec_single(target)
+
+    TARGET_MAP = {
+        ast.Name: target_name,
+    }
+
+    def iter_call__range(self, test_val, pre_target_val, *args):
+        stop = mast.Name()
+        step = mast.Name()
+        bidi = False
+
+        if len(args) == 1:
+            self.proc('set', pre_target_val, mast.Literal(0))
+            self.proc('set', step, mast.Literal(1))
+            self.proc('set', stop, args[0])
+        elif len(args) == 2:
+            self.proc('set', pre_target_val, args[0])
+            self.proc('set', step, mast.Literal(1))
+            self.proc('set', stop, args[1])
+        elif len(args) == 3:
+            self.proc('set', pre_target_val, args[0])
+            self.proc('set', step, args[2])
+            self.proc('set', stop, args[1])
+            bidi = True
+        else:
+            raise ValueError
+
+        def create_test_code():
+            if not bidi:
+                self.proc('op lessThan', test_val, pre_target_val, stop)
+            else:
+                decr = mast.Label()
+                fin = mast.Label()
+                self.jump(decr, 'lessThan', step, mast.Literal(0))
+                self.proc('op lessThan', test_val, pre_target_val, stop)
+                self.jump(fin, 'always')
+                self.pre.append(decr)
+                self.proc('op greaterThan', test_val, pre_target_val, stop)
+                self.pre.append(fin)
+
+        def create_after_body():
+            self.proc('op add', pre_target_val, pre_target_val, step)
+
+        return create_test_code, create_after_body
+
+    def iter_call(self, call, test_val, pre_target_val):
+        if not isinstance(call.func, ast.Name):
+            raise ValueError
+        assert call.keywords == []
+        fname = call.func.id
+        m = getattr(self, 'iter_call__' + fname)
+        args = [self.run_trec_single(a) for a in call.args]
+        return m(test_val, pre_target_val, *args)
+
+    ITER_MAP = {
+        ast.Call: iter_call,
+    }
+
+    def handle(self):
+        loop_label = mast.Label()
+        else_label = mast.Label()
+        end_label = mast.Label()
+        test_val = mast.Name()
+        pre_target_val = mast.Name()
+
+        target = get_type_map(
+            self.TARGET_MAP, self.expr.target, 'loop counter variable',
+        )(self, self.expr.target)
+
+        create_test_code, create_after_body = get_type_map(
+            self.ITER_MAP, self.expr.iter, 'iterator',
+        )(self, self.expr.iter, test_val, pre_target_val)
+
+        self.pre.append(loop_label)
+
+        create_test_code()
+        self.jump(else_label, 'equal', test_val, mast.Literal(False))
+        self.proc('set', target, pre_target_val)
+
+        for stmt in self.expr.body:
+            self.run_trec(stmt)
+
+        create_after_body()
+        self.jump(loop_label, 'always')
+        self.pre.append(else_label)
+
+        for stmt in self.expr.orelse:
+            self.run_trec(stmt)
+
         self.pre.append(end_label)
 
 

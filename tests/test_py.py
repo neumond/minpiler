@@ -144,6 +144,38 @@ balance(container1)
 Object container
 Lead 300
 ==============
+n = 8
+for i in range(n - 4):
+    i += 1
+    M.print(i, ";")
+else:
+    M.print("Else;")
+M.print("End;")
+--------------
+1;2;3;4;Else;End;
+==============
+for i in range(-2):
+    M.print(i, ";")
+M.print("End;")
+--------------
+End;
+==============
+for i in range(5, 1):
+    M.print(i, ";")
+M.print("End;")
+--------------
+End;
+==============
+for i in range(3, 9, 3):
+    M.print(i, ";")
+--------------
+3;6;
+==============
+for i in range(9, 3, -3):
+    M.print(i, ";")
+--------------
+9;6;
+==============
 """
 
 
