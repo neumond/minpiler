@@ -193,6 +193,7 @@ def execute(instructions, state: dict, max_steps=5000):
 
     for _ in range(max_steps):
         ins = instructions[int(state['@counter'])]
+        # https://github.com/Anuken/Mindustry/blob/master/core/src/mindustry/logic/LExecutor.java#L70
         state['@counter'] = int(state['@counter']) + 1
         if isinstance(ins, mast.FunctionCall):
             state[ins.result.name] = execute_fn_call(

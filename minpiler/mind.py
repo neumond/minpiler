@@ -804,10 +804,13 @@ class ForStatementHandler(BaseExpressionHandler):
                 self.proc('op greaterThan', test_val, pre_target_val, stop)
                 self.pre.append(fin)
 
+        def create_pre_body():
+            pass
+
         def create_after_body():
             self.proc('op add', pre_target_val, pre_target_val, step)
 
-        return create_test_code, create_after_body
+        return create_test_code, create_pre_body, create_after_body
 
     def iter_call(self, call, test_val, pre_target_val):
         if not isinstance(call.func, ast.Name):
@@ -818,8 +821,44 @@ class ForStatementHandler(BaseExpressionHandler):
         args = [self.run_trec_single(a) for a in call.args]
         return m(test_val, pre_target_val, *args)
 
+    def iter_tuple(self, tup, test_val, pre_target_val):
+        items = [self.run_trec_single(item) for item in tup.elts]
+        if not items:
+            raise ValueError('Tuple must not be empty')
+
+        after_table = mast.Label()
+        tuple_start = mast.Label()
+        ret_addr = mast.Name()
+        pointer = mast.Name()
+
+        self.proc('set', pointer, tuple_start)
+        self.jump(after_table, 'always')
+
+        self.pre.append(tuple_start)
+
+        for item in items:
+            self.proc('set', pre_target_val, item)
+            self.proc('set', mast.Name('@counter'), ret_addr)
+
+        self.pre.append(after_table)
+
+        def create_test_code():
+            self.proc('op lessThan', test_val, pointer, after_table)
+
+        def create_pre_body():
+            self.proc(
+                'op add', ret_addr, mast.Name('@counter'), mast.Literal(1))
+            self.proc('set', mast.Name('@counter'), pointer)
+
+        def create_after_body():
+            self.proc('op add', pointer, pointer, mast.Literal(2))
+
+        return create_test_code, create_pre_body, create_after_body
+
     ITER_MAP = {
         ast.Call: iter_call,
+        ast.Tuple: iter_tuple,
+        ast.List: iter_tuple,
     }
 
     def handle(self):
@@ -833,7 +872,7 @@ class ForStatementHandler(BaseExpressionHandler):
             self.TARGET_MAP, self.expr.target, 'loop counter variable',
         )(self, self.expr.target)
 
-        create_test_code, create_after_body = get_type_map(
+        create_test_code, create_pre_body, create_after_body = get_type_map(
             self.ITER_MAP, self.expr.iter, 'iterator',
         )(self, self.expr.iter, test_val, pre_target_val)
 
@@ -841,6 +880,7 @@ class ForStatementHandler(BaseExpressionHandler):
 
         create_test_code()
         self.jump(else_label, 'equal', test_val, mast.Literal(False))
+        create_pre_body()
         self.proc('set', target, pre_target_val)
 
         for stmt in self.expr.body:
